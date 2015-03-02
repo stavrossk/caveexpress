@@ -1,15 +1,17 @@
 #include "UIMainWindow.h"
 #include "engine/client/ui/UI.h"
 #include "engine/client/ui/nodes/UINodeButton.h"
+#include "engine/client/ui/nodes/UINodeButtonImage.h"
 #include "engine/client/ui/nodes/UINodeMainButton.h"
-#include "caveexpress/client/ui/nodes/UINodeMainBackground.h"
+#include "engine/client/ui/nodes/UINodeMainBackground.h"
 #include "engine/client/ui/nodes/UINodeSprite.h"
 #include "engine/client/ui/nodes/UINodeLabel.h"
+#include "engine/client/ui/nodes/UINodeGooglePlayButton.h"
 #include "engine/client/ui/windows/listener/QuitListener.h"
 #include "engine/client/ui/layouts/UIVBoxLayout.h"
 #include "engine/common/ConfigManager.h"
-#include "engine/common/Version.h"
 #include "engine/common/System.h"
+#include "engine/common/Application.h"
 #include "engine/client/ui/windows/listener/OpenWindowListener.h"
 
 UIMainWindow::UIMainWindow (IFrontend *frontend, ServiceProvider& serviceProvider) :
@@ -43,11 +45,13 @@ UIMainWindow::UIMainWindow (IFrontend *frontend, ServiceProvider& serviceProvide
 	campaign->addListener(UINodeListenerPtr(new OpenWindowListener(UI_WINDOW_CAMPAIGN)));
 	panel->add(campaign);
 
+#ifndef NONETWORK
 	if (Config.isNetwork()) {
 		UINodeMainButton *multiplayer = new UINodeMainButton(_frontend, tr("Multiplayer"));
 		multiplayer->addListener(UINodeListenerPtr(new OpenWindowListener(UI_WINDOW_MULTIPLAYER)));
 		panel->add(multiplayer);
 	}
+#endif
 
 	UINodeMainButton *settings = new UINodeMainButton(_frontend, tr("Settings"));
 	settings->addListener(UINodeListenerPtr(new OpenWindowListener(UI_WINDOW_SETTINGS)));
@@ -59,25 +63,49 @@ UIMainWindow::UIMainWindow (IFrontend *frontend, ServiceProvider& serviceProvide
 		panel->add(payment);
 	}
 
+	if (System.supportGooglePlay()) {
+		UINodeButtonImage *googlePlay = new UINodeGooglePlayButton(_frontend);
+		googlePlay->setPadding(padding);
+		add(googlePlay);
+	}
+
 	UINodeMainButton *twitter = new UINodeMainButton(_frontend, tr("Twitter"));
 	twitter->addListener(UINodeListenerPtr(new OpenURLListener(_frontend, "https://twitter.com/MartinGerhardy")));
 	panel->add(twitter);
 
+#if 0
 	UINodeMainButton *facebook = new UINodeMainButton(_frontend, tr("Facebook"));
-	facebook->addListener(UINodeListenerPtr(new OpenURLListener(_frontend, "https://facebook.com/" APPNAME)));
+	facebook->addListener(UINodeListenerPtr(new OpenURLListener(_frontend, "https://facebook.com/" + Singleton<Application>::getInstance().getName())));
 	panel->add(facebook);
+#else
+	UINodeMainButton *homepage = new UINodeMainButton(_frontend, tr("Homepage"));
+	homepage->addListener(UINodeListenerPtr(new OpenURLListener(_frontend, "http://caveproductions.org/")));
+	panel->add(homepage);
+#endif
 
 	UINodeMainButton *help = new UINodeMainButton(_frontend, tr("Help"));
 	help->addListener(UINodeListenerPtr(new OpenWindowListener(UI_WINDOW_HELP)));
 	panel->add(help);
 
+#if 0
+#ifdef __EMSCRIPTEN__
+	UINodeMainButton *fullscreen = new UINodeMainButton(_frontend, tr("Fullscreen"));
+	fullscreen->addListener(UINodeListenerPtr(new EmscriptenFullscreenListener()));
+	panel->add(fullscreen);
+#endif
+#endif
+
 	UINodeMainButton *quit = new UINodeMainButton(_frontend, tr("Quit"));
+#ifdef __EMSCRIPTEN__
+	quit->addListener(UINodeListenerPtr(new OpenURLListener(_frontend, "http://caveproductions.org/", false)));
+#else
 	quit->addListener(UINodeListenerPtr(new QuitListener()));
+#endif
 	panel->add(quit);
 
 	add(panel);
 
-	UINodeLabel *versionLabel = new UINodeLabel(_frontend, VERSION);
+	UINodeLabel *versionLabel = new UINodeLabel(_frontend, Singleton<Application>::getInstance().getVersion());
 	versionLabel->setAlignment(NODE_ALIGN_BOTTOM|NODE_ALIGN_RIGHT);
 	versionLabel->setColor(colorWhite);
 	versionLabel->setPadding(getScreenPadding());

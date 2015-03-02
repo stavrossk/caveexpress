@@ -1,7 +1,7 @@
 #include "TextConsole.h"
 #include "engine/common/ConfigManager.h"
 #include "engine/common/System.h"
-#include "engine/common/Version.h"
+#include "engine/common/Application.h"
 #include <SDL.h>
 #include <algorithm>
 #include <iostream>
@@ -99,17 +99,11 @@ void TextConsole::cursorDelete (bool moveCursor)
 void TextConsole::logInfo (const std::string& string)
 {
 	_entries.push_back(new ConsoleEntry(COLOR_DEFAULT, false, string));
-#ifndef HAVE_NCURSES_H
-	System.logOutput(string);
-#endif
 }
 
 void TextConsole::logError (const std::string& string)
 {
 	_entries.push_back(new ConsoleEntry(COLOR_ALT, true, string));
-#ifndef HAVE_NCURSES_H
-	System.logError(string);
-#endif
 }
 
 void TextConsole::logDebug (const std::string& string)
@@ -163,7 +157,7 @@ void TextConsole::render ()
 
 	// Draw the header
 	setColor(COLOR_GREEN);
-	mvaddstr(0, 2, APPFULLNAME);
+	mvaddstr(0, 2, Singleton<Application>::getInstance().getName().c_str());
 
 	const int lines = LINES - 2;
 	const int lastLine = _entries.size();

@@ -3,8 +3,10 @@
 #include "engine/common/IEventObserver.h"
 #include "engine/common/ConfigVar.h"
 #include "engine/client/ui/windows/UIWindow.h"
+#include "engine/common/CommandSystem.h"
 #include "engine/common/Common.h"
 #include "engine/common/System.h"
+#include "engine/common/Logger.h"
 #include "engine/common/Pointers.h"
 #include "engine/common/IProgressCallback.h"
 #include "engine/client/textures/TextureCache.h"
@@ -24,7 +26,17 @@ public:
 	virtual ~UIPopupCallback() {}
 
 	virtual void onOk () {}
-	virtual void onCancel () {}
+	virtual void onCancel ();
+};
+
+class UIPopupOkCommandCallback: public UIPopupCallback {
+protected:
+	const std::string _command;
+public:
+	UIPopupOkCommandCallback(const std::string& command) : _command(command) {}
+	virtual ~UIPopupOkCommandCallback() {}
+
+	virtual void onOk () override { Commands.executeCommandLine(_command); }
 };
 
 #define UIPOPUP_OK			(1 << 0)
@@ -87,6 +99,7 @@ private:
 
 	UI ();
 	void pushCmd (const std::string& windowID);
+	bool loadGesture (const unsigned char* data, int length);
 
 public:
 	virtual ~UI ();
@@ -102,13 +115,16 @@ public:
 	{
 		UIWindowMap::iterator i = _windows.find(window);
 		if (i == _windows.end()) {
-			System.exit("could not find window " + window, 1);
+			debug(LOG_CLIENT, "could not find window " + window);
+			return nullptr;
 		}
 
 		UIWindow* windowPtr = i->second;
 		UINode* node = windowPtr->getNode(nodeId);
-		if (node == nullptr)
-			System.exit("could not find node " + nodeId, 1);
+		if (node == nullptr) {
+			debug(LOG_CLIENT, "could not find node " + nodeId);
+			return nullptr;
+		}
 		return static_cast<UINodeType*>(node);
 	}
 	UIWindow* getWindow (const std::string& windowID);
@@ -174,6 +190,23 @@ public:
 	void onJoystickMotion (bool horizontal, int value) override;
 	void onJoystickButtonPress (uint8_t button) override;
 	void onControllerButtonPress (const std::string& button) override;
+	/**
+	 * @brief pinch/rotate/swipe gestures
+	 * @param theta the amount that the fingers rotated during this motion
+	 * @param dist the amount that the fingers pinched during this motion
+	 * @param numFingers the number of fingers used in the gesture
+	 */
+	void onMultiGesture (float theta, float dist, int32_t numFingers) override;
+	/**
+	 * $1 gesture recognition system
+	 * @param gestureId a hash of the gesture data. If you have duplicates, just re-record the gesture.
+	 * The unique id of the closest gesture to the performed stroke
+	 * @param error the difference between the gesture template and the actual performed gesture. Lower error is a better match.
+	 * @param numFingers the number of fingers used to draw the stroke.
+	 * @sa loadGesture
+	 */
+	void onGesture (int64_t gestureId, float error, int32_t numFingers) override;
+	void onGestureRecord (int64_t gestureId) override;
 };
 
 inline TexturePtr UI::loadTexture (const std::string& name) const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/common/Compiler.h"
+#include "engine/common/Logger.h"
 #include "engine/common/campaign/Campaign.h"
 #include <string>
 #include <stdint.h>
@@ -36,6 +37,8 @@ public:
 	virtual bool reset () = 0;
 	virtual bool resetCampaign (Campaign*) = 0;
 
+	virtual bool init () = 0;
+
 	virtual const std::string& getActiveCampaign () const
 	{
 		return _activeCampaign;
@@ -48,8 +51,15 @@ public:
 			IGameStatePersister()
 	{
 	}
+
+	virtual bool init() override
+	{
+		return true;
+	}
+
 	virtual bool saveCampaign (Campaign* campaign) override
 	{
+		info(LOG_CAMPAIGN, "don't persist campaign progress for " + campaign->getId());
 		_activeCampaign = campaign->getId();
 		return true;
 	}

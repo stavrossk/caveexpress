@@ -7,6 +7,7 @@
 #include "engine/common/ServiceProvider.h"
 #include "engine/common/campaign/ICampaignManager.h"
 #include "engine/GameRegistry.h"
+#include "engine/common/network/INetwork.h"
 
 class TestCampaignMgr : public ICampaignManager {
 public:
@@ -18,7 +19,7 @@ public:
 	}
 
 	bool updateMapValues(const std::string& mapname, uint32_t finishPoints,
-			uint32_t time, uint8_t stars) override {
+			uint32_t time, uint8_t stars, bool lowerPointsAreBetter = false) override {
 		return true;
 	}
 };
@@ -30,11 +31,7 @@ protected:
 	ServiceProvider _serviceProvider;
 	EventHandler _eventHandler;
 
+	virtual ~MapSuite() {}
 	virtual void SetUp() override;
 	virtual void TearDown() override;
 };
-
-class TestGame : public IGame {
-};
-
-static GameRegisterStatic CAVEEXPRESS("test", GamePtr(new TestGame()));

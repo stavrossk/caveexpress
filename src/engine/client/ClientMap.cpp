@@ -1,7 +1,5 @@
 #include "engine/client/ClientMap.h"
 #include "engine/common/MapSettings.h"
-#include "engine/client/particles/Bubble.h"
-#include "engine/client/particles/Snow.h"
 #include "engine/common/network/messages/StopMovementMessage.h"
 #include "engine/common/network/messages/MovementMessage.h"
 #include "engine/common/network/messages/FingerMovementMessage.h"
@@ -14,43 +12,55 @@
 #include "engine/common/ConfigManager.h"
 #include "engine/common/EventHandler.h"
 #include "engine/common/ServiceProvider.h"
+#include "engine/common/CommandSystem.h"
 #include "engine/common/GLShared.h"
 #include "engine/common/ExecutionTime.h"
 #include "engine/common/DateUtil.h"
 #include "engine/common/Commands.h"
+#include "engine/common/Logger.h"
 #include <SDL.h>
 
 ClientMap::ClientMap (int x, int y, int width, int height, IFrontend *frontend, ServiceProvider& serviceProvider, int referenceTileWidth) :
-		IMap(), _x(x), _y(y), _width(width), _height(height), _scale(referenceTileWidth), _restartDue(0), _restartInitialized(0), _mapWidth(
+		IMap(), _x(x), _y(y), _width(width), _height(height), _scale(referenceTileWidth), _zoom(1.0f), _restartDue(0), _restartInitialized(0), _mapWidth(
 				0), _mapHeight(0), _player(nullptr), _time(0), _playerID(0), _frontend(frontend), _pause(false), _serviceProvider(
 						serviceProvider), _screenRumble(false), _screenRumbleStrength(0.0f), _screenRumbleOffsetX(
 						0), _screenRumbleOffsetY(0), _particleSystem(
-				Config.getClientSideParticleMaxAmount()), _tutorial(false), _started(false), _theme(&ThemeTypes::ROCK)
+				Config.getClientSideParticleMaxAmount()), _tutorial(false), _started(false), _theme(&ThemeTypes::ROCK), _startPositions(0)
 {
+	_maxZoom = Config.getConfigVar("maxzoom", "1.2");
+	_minZoom = Config.getConfigVar("minzoom", "0.5");
 }
 
 ClientMap::~ClientMap ()
 {
-	close();
+	resetCurrentMap();
 }
 
 void ClientMap::close ()
 {
 	resetCurrentMap();
+	SoundControl.haltAll();
 }
 
 void ClientMap::start ()
 {
+	info(LOG_CLIENT, "client map start");
 	_started = true;
 }
 
 bool ClientMap::isStarted () const
 {
-	return !_serviceProvider.getNetwork().isMultiplayer() || _started;
+	if (!_serviceProvider.getNetwork().isMultiplayer()) {
+		return true;
+	}
+	return _started;
 }
 
 void ClientMap::resetCurrentMap ()
 {
+	info(LOG_CLIENT, "client map reset");
+	_startPositions = 0;
+	_zoom = 1.0f;
 	_timeManager.reset();
 	_settings.clear();
 	_name.clear();
@@ -64,7 +74,7 @@ void ClientMap::resetCurrentMap ()
 	_player = nullptr;
 	_pause = false;
 	_playerID = 0;
-	_camera.update(vec2_zero, 0);
+	_camera.update(vec2_zero, 0, 1.0f);
 	_restartDue = 0;
 	_restartInitialized = 0;
 	_particleSystem.clear();
@@ -72,7 +82,13 @@ void ClientMap::resetCurrentMap ()
 	_screenRumbleStrength = 0.0f;
 	_screenRumbleOffsetX = 0;
 	_screenRumbleOffsetY = 0;
-	SoundControl.haltAll();
+}
+
+void ClientMap::setZoom (const float zoom)
+{
+	const float minZoom = _minZoom->getFloatValue();
+	const float maxZoom = _maxZoom->getFloatValue();
+	_zoom = clamp(zoom, minZoom, maxZoom);
 }
 
 void ClientMap::disconnect ()
@@ -115,7 +131,7 @@ void ClientMap::removeEntity (uint16_t id, bool fadeOut)
 	}
 }
 
-void ClientMap::renderFadeOutOverlay (int x, int y) const
+void ClientMap::renderFadeOutOverlay () const
 {
 	const uint32_t now = _time;
 	const uint32_t delay = _restartDue - _restartInitialized;
@@ -123,65 +139,62 @@ void ClientMap::renderFadeOutOverlay (int x, int y) const
 	const uint32_t delta = now > _restartDue ? 0U : _restartDue - now;
 	const float alpha = 1.0 - delta * restartFadeStepWidth;
 	const Color color = { 0.0, 0.0, 0.0, alpha };
-	_frontend->renderFilledRect(x + _x, y + _y, 0, 0, color);
+	_frontend->renderFilledRect(_x, _y, getPixelWidth() * _zoom, getPixelHeight() * _zoom, color);
 }
 
 void ClientMap::renderLayer (int x, int y, Layer layer) const
 {
-	const int mapPosX = x + _screenRumbleOffsetX;
-	const int mapPosY = y + _screenRumbleOffsetY;
+	if (Config.isDebug()) {
+		_frontend->renderRect(x, y, 4, 4, colorYellow);
+	}
 
 	for (ClientEntityMapConstIter iter = _entities.begin(); iter != _entities.end(); ++iter) {
 		const ClientEntityPtr e = iter->second;
-		e->render(_frontend, layer, _scale, mapPosX, mapPosY);
+		e->render(_frontend, layer, _scale, _zoom, x, y);
 	}
 }
 
-void ClientMap::getLayerOffset (int &x, int &y) const
-{
-	const int mapPixelWidth = _mapWidth * _scale;
-	const int screenPixelWidth = _frontend->getWidth();
-	const int mapPixelHeight = _mapHeight * _scale;
-	const int screenPixelHeight = _frontend->getHeight();
-	if (mapPixelWidth < screenPixelWidth) {
-		x += screenPixelWidth / 2 - mapPixelWidth / 2;
-	}
-
-	if (mapPixelHeight < screenPixelHeight) {
-		y += screenPixelHeight / 2 - mapPixelHeight / 2;
-	}
-}
-
-void ClientMap::render (int x, int y) const
+void ClientMap::render () const
 {
 	ExecutionTime renderTime("ClientMapRender", 2000L);
-	const int baseX = x + _x + _camera.getViewportX();
-	const int baseY = y + _y + _camera.getViewportY();
-	int layerX = baseX;
-	int layerY = baseY;
-	getLayerOffset(layerX, layerY);
+	const int x = _screenRumbleOffsetX + _x + _camera.getViewportX();
+	const int y = _screenRumbleOffsetY + _y + _camera.getViewportY();
 
-	_frontend->enableScissor(layerX, layerY,
-			std::min(getWidth() - layerX, _mapWidth * _scale),
-			std::min(getHeight() - layerY, _mapHeight * _scale));
-	renderLayer(layerX, layerY, LAYER_BACK);
-	renderLayer(layerX, layerY, LAYER_MIDDLE);
-	renderLayer(layerX, layerY, LAYER_FRONT);
+	const int scissorX = std::max(0, x);
+	const int scissorY = std::max(0, y);
+	const bool debug = Config.isDebug();
+	if (debug) {
+		_frontend->renderRect(scissorX, scissorY, getPixelWidth() * _zoom, getPixelHeight() * _zoom, colorRed);
+	} else {
+		_frontend->enableScissor(scissorX, scissorY, getPixelWidth() * _zoom, getPixelHeight() * _zoom);
+	}
+	renderLayer(x, y, LAYER_BACK);
+	renderLayer(x, y, LAYER_MIDDLE);
+	renderLayer(x, y, LAYER_FRONT);
 
 	if (_restartDue != 0) {
-		renderFadeOutOverlay(x, y);
+		renderFadeOutOverlay();
 	}
 
-	Config.setDebugRendererData(layerX, layerY, getWidth(), getHeight(), _scale);
+	Config.setDebugRendererData(x, y, getWidth(), getHeight(), _scale * _zoom);
 	Config.getDebugRenderer().render();
 
-	_particleSystem.render(_frontend, layerX, layerY);
+	renderParticles(x, y);
 
-	_frontend->disableScissor();
+	if (!debug) {
+		_frontend->disableScissor();
+	}
+}
+
+void ClientMap::renderParticles (int x, int y) const
+{
+	_particleSystem.render(_frontend, x, y, _zoom);
 }
 
 void ClientMap::init (uint16_t playerID)
 {
+	info(LOG_CLIENT, String::format("init client map for player %i", playerID));
+
 	_camera.init(getWidth(), getHeight(), _mapWidth, _mapHeight, _scale);
 
 	_restartInitialized = 0U;
@@ -192,23 +205,6 @@ void ClientMap::init (uint16_t playerID)
 	const ClientInitMessage msgInit(name);
 	INetwork& network = _serviceProvider.getNetwork();
 	network.sendToServer(msgInit);
-
-	// TODO: also take the non water height into account - so not have the amount of bubbles
-	// on a small area when the water is rising
-	const int bubbles = getWidth() / 100;
-	for (int i = 0; i < bubbles; ++i) {
-		_particleSystem.spawn(ParticlePtr(new Bubble(*this)));
-	}
-
-	const bool xmas = dateutil::isXmas();
-	if (xmas || ThemeTypes::isIce(*_theme)) {
-		// TODO: also take the non water height into account - so not have the amount of flakes
-		// on a small area when the water is rising
-		const int snowFlakes = getWidth() / 10;
-		for (int i = 0; i < snowFlakes; ++i) {
-			_particleSystem.spawn(ParticlePtr(new Snow(*this)));
-		}
-	}
 }
 
 TexturePtr ClientMap::loadTexture (const std::string& name) const
@@ -279,12 +275,13 @@ void ClientMap::update (uint32_t deltaTime)
 
 	_time += deltaTime;
 	if (_player) {
-		_camera.update(_player->getPos(), _player->getMoveDirection());
+		_camera.update(_player->getPos(), _player->getMoveDirection(), _zoom);
 		SoundControl.setListenerPosition(_player->getPos());
 	}
 	const ExecutionTime updateTime("ClientMap", 2000L);
+	const bool lerp = wantLerp();
 	for (ClientEntityMapIter i = _entities.begin(); i != _entities.end();) {
-		const bool val = i->second->update(deltaTime, _restartDue == 0);
+		const bool val = i->second->update(deltaTime, lerp);
 		if (!val) {
 			_entities.erase(i++);
 		} else {
@@ -296,7 +293,7 @@ void ClientMap::update (uint32_t deltaTime)
 bool ClientMap::load (const std::string& name, const std::string& title)
 {
 	info(LOG_CLIENT, "load map " + name);
-	resetCurrentMap();
+	close();
 	_name = name;
 	_title = title;
 
@@ -350,7 +347,7 @@ bool ClientMap::updateEntity (uint16_t id, float x, float y, EntityAngle angle, 
 {
 	const ClientEntityMapIter& iter = _entities.find(id);
 	if (iter != _entities.end()) {
-		iter->second->setPos(vec2(x, y));
+		iter->second->setPos(vec2(x, y), wantLerp());
 		iter->second->setAngle(angle);
 		iter->second->changeState(state);
 		return true;
@@ -361,18 +358,22 @@ bool ClientMap::updateEntity (uint16_t id, float x, float y, EntityAngle angle, 
 
 void ClientMap::onData (ByteStream &data)
 {
-	while (!data.empty()) {
-		const ScopedPtr<IProtocolMessage> msg(ProtocolMessageFactory::get().create(data));
+	ProtocolMessageFactory& factory = ProtocolMessageFactory::get();
+	while (factory.isNewMessageAvailable(data)) {
+		// remove the size from the stream
+		data.readShort();
+		const ScopedPtr<IProtocolMessage> msg(factory.create(data));
 		if (!msg) {
-			error(LOG_SERVER, "no message for type " + string::toString(static_cast<int>(data.readByte())));
+			error(LOG_NET, "no message for type " + string::toString(static_cast<int>(data.readByte())));
 			continue;
 		}
 
+		debug(LOG_NET, String::format("received message type %i", msg->getId()));
 		IClientProtocolHandler* handler = ProtocolHandlerRegistry::get().getClientHandler(*msg);
 		if (handler != nullptr)
 			handler->execute(*msg);
 		else
-			error(LOG_SERVER, String::format("no client handler for message type %i", msg->getId()));
+			error(LOG_NET, String::format("no client handler for message type %i", msg->getId()));
 	}
 }
 

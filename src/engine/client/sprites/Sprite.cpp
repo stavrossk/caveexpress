@@ -115,6 +115,11 @@ bool Sprite::render (IFrontend *frontend, Layer layer, int y) const
 
 bool Sprite::render (IFrontend *frontend, Layer layer, int x, int y, int16_t angle, float alpha) const
 {
+	return render(frontend, layer, x, y, 1.0f, angle, alpha);
+}
+
+bool Sprite::render (IFrontend *frontend, Layer layer, int x, int y, float zoom, int16_t angle, float alpha) const
+{
 	if (_currentFrame == -1)
 		return false;
 
@@ -122,14 +127,14 @@ bool Sprite::render (IFrontend *frontend, Layer layer, int x, int y, int16_t ang
 	if (x >= frontend->getWidth())
 		return false;
 
-	const int h = _spriteHeight;
 	if (y >= frontend->getHeight())
 		return false;
 
-	const int w = _spriteWidth;
+	const int w = _spriteWidth * zoom;
 	if (x + w < 0)
 		return false;
-	else if (y + h < 0)
+	const int h = _spriteHeight * zoom;
+	if (y + h < 0)
 		return false;
 
 	const TexturePtr t = getActiveTexture(layer);
@@ -137,6 +142,6 @@ bool Sprite::render (IFrontend *frontend, Layer layer, int x, int y, int16_t ang
 		return false;
 
 	// the positions are the center of the sprites - so we have to offset them here
-	frontend->renderImage(t.get(), x, y, t->getWidth(), t->getHeight(), angle, alpha);
+	frontend->renderImage(t.get(), x, y, t->getWidth() * zoom, t->getHeight() * zoom, angle, alpha);
 	return true;
 }

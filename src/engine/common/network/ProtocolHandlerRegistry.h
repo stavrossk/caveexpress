@@ -2,13 +2,13 @@
 
 #include "IProtocolHandler.h"
 #include "engine/common/NonCopyable.h"
-#include <map>
+#include <unordered_map>
 
 class ProtocolHandlerRegistry: public NonCopyable {
 private:
-	typedef std::map<protocolId, IClientProtocolHandler*> ClientProtocolHandlers;
+	typedef std::unordered_map<protocolId, IClientProtocolHandler*> ClientProtocolHandlers;
 	ClientProtocolHandlers _clientRegistry;
-	typedef std::map<protocolId, IServerProtocolHandler*> ServerProtocolHandlers;
+	typedef std::unordered_map<protocolId, IServerProtocolHandler*> ServerProtocolHandlers;
 	ServerProtocolHandlers _serverRegistry;
 
 	ProtocolHandlerRegistry ()
@@ -24,12 +24,19 @@ public:
 
 	virtual ~ProtocolHandlerRegistry ()
 	{
+		shutdown();
+	}
+
+	void shutdown()
+	{
 		for (ClientProtocolHandlers::iterator i = _clientRegistry.begin(); i != _clientRegistry.end(); ++i) {
 			delete i->second;
 		}
+		_clientRegistry.clear();
 		for (ServerProtocolHandlers::iterator i = _serverRegistry.begin(); i != _serverRegistry.end(); ++i) {
 			delete i->second;
 		}
+		_serverRegistry.clear();
 	}
 
 	void registerClientHandler (protocolId type, IClientProtocolHandler* handler)

@@ -1,8 +1,8 @@
 #include "ByteStream.h"
 #include "engine/common/String.h"
+#include <SDL_stdinc.h>
 
-ByteStream::ByteStream () :
-		_size(0)
+ByteStream::ByteStream ()
 {
 }
 
@@ -11,12 +11,32 @@ ByteStream::~ByteStream ()
 	_buffer.clear();
 }
 
-void ByteStream::checkSize () const
-{
-	if (_size != _buffer.size()) {
-		_size = _buffer.size();
-		_buffer.resize(_size);
+int32_t ByteStream::peekInt() const {
+	const int l = 4;
+	if (_buffer.size() < l)
+		return -1;
+	uint8_t buf[l];
+	VectorBuffer::const_iterator it = _buffer.begin();
+	for (int i = 0; i < l; ++i) {
+		buf[i] = *it++;
 	}
+	const int32_t *word = (const int32_t*) (void*) buf;
+	const int32_t val = SDL_SwapLE32(*word);
+	return val;
+}
+
+int16_t ByteStream::peekShort() const {
+	const int l = 2;
+	if (_buffer.size() < l)
+		return -1;
+	uint8_t buf[l];
+	VectorBuffer::const_iterator it = _buffer.begin();
+	for (int i = 0; i < l; ++i) {
+		buf[i] = *it++;
+	}
+	const int16_t *word = reinterpret_cast<const int16_t*>(buf);
+	const int16_t val = SDL_SwapLE16(*word);
+	return val;
 }
 
 void ByteStream::addFormat (const char *fmt, ...)
@@ -77,7 +97,7 @@ std::string ByteStream::readString ()
 	std::string strbuff;
 	strbuff.reserve(64);
 	for (;;) {
-		const char chr = *(_buffer.begin() + size);
+		const char chr = *std::next(_buffer.begin(), size);
 		++size;
 		if (size > _buffer.size())
 			System.exit(String::format("invalid string in readString - size (%i) is bigger than the buffer size (%i)", size, _buffer.size()), 1);
@@ -85,7 +105,6 @@ std::string ByteStream::readString ()
 			break;
 		strbuff += chr;
 	}
-	_buffer.erase(_buffer.begin(), _buffer.begin() + size);
-	_size -= size;
+	_buffer.erase(_buffer.begin(), std::next(_buffer.begin(), size));
 	return strbuff;
 }

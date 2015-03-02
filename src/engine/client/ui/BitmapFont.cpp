@@ -5,12 +5,12 @@
 #include "engine/common/System.h"
 
 BitmapFont::BitmapFont(const FontDefPtr& fontDefPtr, IFrontend *frontend) :
-		_frontend(frontend),_fontDefPtr(fontDefPtr) {
+		_frontend(frontend),_fontDefPtr(fontDefPtr), _time(0U) {
 	_font = UI::get().loadTexture(fontDefPtr->textureName);
+	_rand = randBetween(0, 10000);
 	if (!_font || !_font->isValid()) {
 		System.exit("invalid font definition with texture " + fontDefPtr->textureName, 1);
 	}
-	// TODO: doesn't work on ui restart
 	_fontDefPtr->updateChars(_font->getWidth(), _font->getHeight());
 }
 
@@ -39,6 +39,11 @@ int BitmapFont::getMaxCharsForLength (const std::string& string, int pixelWidth)
 	return chars;
 }
 
+void BitmapFont::update (uint32_t deltaTime)
+{
+	_time += deltaTime;
+}
+
 int BitmapFont::getCharWidth () const
 {
 	return getTextWidth(" ");
@@ -63,7 +68,7 @@ int BitmapFont::getTextWidth (const std::string& string) const
 	return std::max(lineWidth, width);
 }
 
-int BitmapFont::printMax (const std::string& text, const Color& color, int x, int y, int maxLength) const
+int BitmapFont::printMax (const std::string& text, const Color& color, int x, int y, int maxLength, bool rotate) const
 {
 	if (_fontDefPtr->getHeight() < 8)
 		return 0;
@@ -95,7 +100,9 @@ int BitmapFont::printMax (const std::string& text, const Color& color, int x, in
 		}
 		if (maxLength <= 0 || x + fontChr->getWidth() - beginX <= maxLength) {
 			_font->setRect(sourceRect.x + fontChr->getX(), sourceRect.y + fontChr->getY(), fontChr->getW(), fontChr->getH());
-			_frontend->renderImage(_font.get(), x + fontChr->getOX(), y + yShift + _fontDefPtr->getHeight() - fontChr->getOY(), fontChr->getW(), fontChr->getH(), 0, color[3]);
+			const int letterAngleMod = x + fontChr->getOX() + y + yShift + _fontDefPtr->getHeight() - fontChr->getOY() + fontChr->getW() + fontChr->getH();
+			const int angle = rotate ? RadiansToDegrees(cos(static_cast<double>(letterAngleMod * 100 + _time + _rand) / 100.0) / 6.0) : 0;
+			_frontend->renderImage(_font.get(), x + fontChr->getOX(), y + yShift + _fontDefPtr->getHeight() - fontChr->getOY(), fontChr->getW(), fontChr->getH(), angle, color[3]);
 		}
 		x += fontChr->getWidth();
 	}
@@ -104,7 +111,7 @@ int BitmapFont::printMax (const std::string& text, const Color& color, int x, in
 	return yShift;
 }
 
-int BitmapFont::print (const std::string& text, const Color& color, int x, int y) const
+int BitmapFont::print (const std::string& text, const Color& color, int x, int y, bool rotate) const
 {
-	return printMax(text, color, x, y, -1);
+	return printMax(text, color, x, y, -1, rotate);
 }

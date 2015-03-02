@@ -8,6 +8,7 @@
 #include "engine/client/ui/BitmapFont.h"
 #include "engine/client/ui/layouts/IUILayout.h"
 #include <SDL.h>
+#include <algorithm>
 
 int UINode::_counter = 0;
 
@@ -196,6 +197,22 @@ void UINode::onAdd()
 
 void UINode::displayText (const std::string& text, uint32_t delayMillis, float x, float y)
 {
+	struct isEqual {
+		isEqual(const std::string& s) :
+				_s(s) {
+		}
+
+		bool operator()(const UINodeDelayedText& l) {
+			return l.text == _s;
+		}
+
+		const std::string& _s;
+	};
+	DelayedTextsIter i = std::find_if(_texts.begin(), _texts.end(), isEqual(text));
+	if (i != _texts.end()) {
+		i->delayMillis = delayMillis;
+		return;
+	}
 	o("Display text '" + text + "' for " + string::toString(delayMillis) + "ms");
 	const NodeCoord c(x, y);
 	const BitmapFontPtr& font = getFont(HUGE_FONT);
@@ -314,6 +331,8 @@ void UINode::renderTop (int x, int y) const
 
 void UINode::render (int x, int y) const
 {
+	if (!isVisible())
+		return;
 	renderBack(x, y);
 	renderMiddle(x, y);
 	renderTop(x, y);
@@ -778,6 +797,57 @@ bool UINode::onMouseButtonRelease (int32_t x, int32_t y, unsigned char button)
 	return false;
 }
 
+bool UINode::onMultiGesture (float theta, float dist, int32_t numFingers)
+{
+	if (!_enabled)
+		return false;
+
+	for (UINodeListRevIter i = _nodes.rbegin(); i != _nodes.rend(); ++i) {
+		UINode* nodePtr = *i;
+		if (!nodePtr->hasFocus())
+			continue;
+		if ((*i)->onMultiGesture(theta, dist, numFingers)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool UINode::onGesture (int64_t gestureId, float error, int32_t numFingers)
+{
+	if (!_enabled)
+		return false;
+
+	for (UINodeListRevIter i = _nodes.rbegin(); i != _nodes.rend(); ++i) {
+		UINode* nodePtr = *i;
+		if (!nodePtr->hasFocus())
+			continue;
+		if ((*i)->onGesture(gestureId, error, numFingers)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool UINode::onGestureRecord (int64_t gestureId)
+{
+	if (!_enabled)
+		return false;
+
+	for (UINodeListRevIter i = _nodes.rbegin(); i != _nodes.rend(); ++i) {
+		UINode* nodePtr = *i;
+		if (!nodePtr->hasFocus())
+			continue;
+		if ((*i)->onGestureRecord(gestureId)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool UINode::onMouseButtonPress (int32_t x, int32_t y, unsigned char button)
 {
 	if (!_enabled)
@@ -915,6 +985,28 @@ bool UINode::checkBounds (int x, int y) const
 	return checkAABB(_x, _y, getX(), getY(), getWidth(), getHeight());
 }
 
+void UINode::addBefore (UINode* reference, UINode* node)
+{
+	UINodeListIter i = std::find(_nodes.begin(), _nodes.end(), reference);
+	if (i == _nodes.end()) {
+		add(node);
+		return;
+	}
+
+	if (i == _nodes.begin()) {
+		addFront(node);
+		return;
+	}
+
+	_nodes.insert(i, node);
+
+	if (_layout)
+		_layout->addNode(node);
+
+	node->setParent(this);
+	node->onAdd();
+}
+
 void UINode::addFront (UINode* node)
 {
 	_nodes.insert(_nodes.begin(), node);
@@ -1012,4 +1104,11 @@ void UINode::setLayout (IUILayout* layout)
 		UINode* nodePtr = *i;
 		_layout->addNode(nodePtr);
 	}
+}
+
+void UINode::setVisible (bool visible)
+{
+	if (!visible)
+		removeFocus();
+	_visible = visible;
 }

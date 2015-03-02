@@ -10,13 +10,16 @@ class BitmapFont {
 	mutable TexturePtr _font;
 	IFrontend *_frontend;
 	FontDefPtr _fontDefPtr;
+	uint32_t _time;
+	int _rand;
 public:
 	BitmapFont (const FontDefPtr& fontDefPtr, IFrontend *frontend);
 	virtual ~BitmapFont (void);
-	int print (const std::string& text, const Color& color, int x, int y) const;
-	int printMax (const std::string& text, const Color& color, int x, int y, int maxLength) const;
+	int print (const std::string& text, const Color& color, int x, int y, bool rotate = true) const;
+	int printMax (const std::string& text, const Color& color, int x, int y, int maxLength, bool rotate = true) const;
 	int getCharHeight () const;
 	int getCharWidth () const;
+	void update (uint32_t deltaTime);
 	int getMaxCharsForLength (const std::string& string, int pixelWidth) const;
 	int getTextWidth (const std::string& string) const;
 	int getTextHeight (const std::string& string) const;

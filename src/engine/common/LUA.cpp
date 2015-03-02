@@ -1,8 +1,8 @@
 #include "LUA.h"
 #include "engine/common/FileSystem.h"
 #include "engine/common/Config.h"
+#include "engine/common/System.h"
 #include <assert.h>
-#include <SDL_platform.h>
 
 class StackChecker {
 private:
@@ -27,6 +27,21 @@ public:
 
 LUA::LUA (bool debug)
 {
+	init(debug);
+}
+
+LUA::~LUA ()
+{
+	close();
+}
+
+void LUA::close ()
+{
+	lua_close(_state);
+}
+
+void LUA::init (bool debug)
+{
 	_state = luaL_newstate();
 	luaL_openlibs(_state);
 
@@ -48,11 +63,6 @@ LUA::LUA (bool debug)
 	}
 }
 
-LUA::~LUA ()
-{
-	lua_close(_state);
-}
-
 void LUA::reg (const std::string& prefix, luaL_Reg* funcs)
 {
 	const std::string metaTableName = "luaL_" + prefix;
@@ -63,11 +73,11 @@ void LUA::reg (const std::string& prefix, luaL_Reg* funcs)
 	lua_setglobal(_state, prefix.c_str());
 }
 
-bool LUA::load (const String &file)
+bool LUA::load (const std::string &file)
 {
 	FilePtr filePtr = FS.getFile(file);
 	if (!filePtr->exists()) {
-		error(LOG_CONFIG, "lua file " + filePtr->getURI().print() + " does not exist");
+		error(LOG_CONFIG, "lua file " + filePtr->getName() + " does not exist");
 		return false;
 	}
 
@@ -75,7 +85,7 @@ bool LUA::load (const String &file)
 	const int fileLen = filePtr->read((void **) &buffer);
 	ScopedArrayPtr<char> p(buffer);
 	if (!buffer || fileLen <= 0) {
-		error(LOG_CONFIG, "failed to read lua file " + filePtr->getURI().print());
+		error(LOG_CONFIG, "failed to read lua file " + filePtr->getName());
 		return false;
 	}
 

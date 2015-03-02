@@ -3,7 +3,6 @@
 #include "engine/common/CommandSystem.h"
 #include "engine/common/IFrontend.h"
 #include "engine/common/Logger.h"
-#include "engine/common/Version.h"
 #include "engine/common/ConfigManager.h"
 #include "engine/common/EventHandler.h"
 #include "engine/common/System.h"
@@ -30,7 +29,7 @@ void ClientConsole::init (IFrontend *frontend)
 {
 	_frontend = frontend;
 	Vector4Set(colorBlack, _fontColor);
-	Commands.registerCommand(CMD_CL_TOGGLECONSOLE, bind(ClientConsole, toggleConsole));
+	Commands.registerCommand(CMD_CL_TOGGLECONSOLE, bindFunction(ClientConsole, toggleConsole));
 }
 
 void ClientConsole::render ()
@@ -79,6 +78,7 @@ void ClientConsole::logInfo (const std::string& string)
 	for (std::vector<std::string>::const_iterator i = tokens.begin(); i != tokens.end(); ++i) {
 		_text.push_back(*i);
 	}
+	System.logOutput(string);
 }
 
 void ClientConsole::logError (const std::string& string)
@@ -88,6 +88,7 @@ void ClientConsole::logError (const std::string& string)
 	for (std::vector<std::string>::const_iterator i = tokens.begin(); i != tokens.end(); ++i) {
 		_text.push_back(*i);
 	}
+	System.logError(string);
 }
 
 void ClientConsole::logDebug (const std::string& string)

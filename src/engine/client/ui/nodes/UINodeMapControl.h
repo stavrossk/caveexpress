@@ -6,6 +6,7 @@
 
 class UIWindow;
 class ClientMap;
+class IUINodeMap;
 
 // UI node that implements player controls via mouse, joystick or touch events
 class UINodeMapControl: public UINode, public IMapControl {
@@ -16,11 +17,13 @@ private:
 	bool _joystick;
 
 public:
-	UINodeMapControl (IFrontend *frontend, ClientMap& map, float x, float y, float w, float h);
+	UINodeMapControl (IFrontend *frontend, IUINodeMap *mapNode);
 	virtual ~UINodeMapControl ();
 
 	// IMapControl
 	bool isPressed () const override { return false; }
+	void hide () override { setVisible(false); }
+	void show () override { setVisible(true); }
 
 	// UINode
 	void renderDebug (int x, int y, int textY) const override;

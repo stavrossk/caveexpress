@@ -3,9 +3,11 @@
 #include "engine/common/EventHandler.h"
 #include "engine/common/Logger.h"
 #include "engine/common/Math.h"
+#include "engine/common/SoundType.h"
 #include "engine/common/ExecutionTime.h"
 #include "engine/common/Singleton.h"
 #include "engine/GameRegistry.h"
+#include "engine/client/sound/Sound.h"
 #include <SDL.h>
 #include <SDL_mixer.h>
 #include <assert.h>
@@ -53,7 +55,6 @@ bool SDLSoundEngine::init (bool initCache)
 		_state = SOUND_CLOSED;
 		return false;
 	}
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 	const int n = SDL_GetNumAudioDrivers();
 	if (n == 0) {
 		error(LOG_CLIENT, " no built-in audio drivers");
@@ -67,7 +68,6 @@ bool SDLSoundEngine::init (bool initCache)
 	}
 
 	info(LOG_CLIENT, String::format("actual audio driver: %s", SDL_GetCurrentAudioDriver()));
-#endif
 
 	const int audioRate = 44100;
 	const Uint16 audioFormat = MIX_DEFAULT_FORMAT;
@@ -87,7 +87,10 @@ bool SDLSoundEngine::init (bool initCache)
 	info(LOG_CLIENT, "sound initialized");
 
 	if (initCache) {
-		Singleton<GameRegistry>::getInstance().getGame()->initSoundCache();
+		ExecutionTime timeCache("Sound cache");
+		for (SoundType::TypeMapConstIter i = SoundType::begin(); i != SoundType::end(); ++i) {
+			SoundControl.cache(i->second->getSound());
+		}
 	}
 	_state = SOUND_INITIALIZED;
 	return true;
@@ -138,8 +141,7 @@ int SDLSoundEngine::playMusic (const std::string& music, bool loop)
 	Mix_FreeMusic(_music);
 	_music = nullptr;
 
-	FilePtr path = FS.getFile(FS.getSoundsDir() + music + SOUNDTYPE);
-	SDL_RWops *rwops = FS.createRWops(path->getURI());
+	SDL_RWops *rwops = FS.createRWops(FS.getDataDir() + FS.getSoundsDir() + music + SOUNDTYPE);
 	if (rwops == nullptr) {
 		error(LOG_CLIENT, "unable to load music file: " + music);
 		return -1;
@@ -224,16 +226,8 @@ Mix_Chunk* SDLSoundEngine::getChunk (const std::string& filename)
 		return i->second;
 	}
 
-	const FilePtr& path = FS.getFile(FS.getSoundsDir() + filename + SOUNDTYPE);
-	if (!path->exists()) {
-		error(LOG_CLIENT, " unable to find sound file: " + filename);
-		// prevent a recheck - the file wasn't here now, so it won't be here the next time.
-		_map[filename] = nullptr;
-		return nullptr;
-	}
-
-	//ExecutionTime cache("Cache sound " + filename);
-	SDL_RWops *rwops = FS.createRWops(path->getURI());
+	const std::string& path = FS.getDataDir() + FS.getSoundsDir() + filename + SOUNDTYPE;
+	SDL_RWops *rwops = FS.createRWops(path);
 	Mix_Chunk *sound = Mix_LoadWAV_RW(rwops, 1);
 	_map[filename] = sound;
 	if (sound == nullptr) {

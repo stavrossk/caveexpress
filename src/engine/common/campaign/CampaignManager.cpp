@@ -27,7 +27,7 @@ struct isEqual {
 CampaignManager::CampaignManager (IGameStatePersister *persister, const IMapManager& mapManager) :
 		_activeCampaign(), _persister(persister), _mapManager(mapManager), _completed(false)
 {
-	Commands.registerCommand(CMD_UNLOCK, bind(CampaignManager, unlock));
+	Commands.registerCommand(CMD_UNLOCK, bindFunction(CampaignManager, unlock));
 }
 
 CampaignManager::~CampaignManager ()
@@ -211,10 +211,10 @@ CampaignPtr CampaignManager::activateCampaign (const std::string& campaignId) co
 	return _activeCampaign;
 }
 
-void CampaignManager::notifyCampaignUnlock () const
+void CampaignManager::notifyCampaignUnlock (const CampaignPtr& oldCampaign) const
 {
 	for (Listeners::const_iterator i = _listeners.begin(); i != _listeners.end(); ++i) {
-		(*i)->onCampaignUnlock(_activeCampaign.get());
+		(*i)->onCampaignUnlock(oldCampaign.get(), _activeCampaign.get());
 	}
 }
 
@@ -274,6 +274,7 @@ CampaignPtr CampaignManager::getActiveCampaign () const
 
 bool CampaignManager::activateNextCampaign () const
 {
+	const CampaignPtr oldCampaign = _activeCampaign;
 	_activeCampaign = CampaignPtr();
 	for (CampaignsMap::const_iterator i = _campaigns.begin(); i != _campaigns.end(); ++i) {
 		CampaignPtr c = *i;
@@ -283,7 +284,7 @@ bool CampaignManager::activateNextCampaign () const
 		}
 		activateCampaign(c->getId());
 		if (_activeCampaign->unlock()) {
-			notifyCampaignUnlock();
+			notifyCampaignUnlock(oldCampaign);
 		}
 		return true;
 	}
@@ -291,7 +292,13 @@ bool CampaignManager::activateNextCampaign () const
 	return false;
 }
 
-bool CampaignManager::updateMapValues (const std::string& mapname, uint32_t finishPoints, uint32_t time, uint8_t stars)
+bool CampaignManager::addAdditionMapData (const std::string& mapname, const std::string& additionData)
+{
+	// TODO: implement me
+	return false;
+}
+
+bool CampaignManager::updateMapValues (const std::string& mapname, uint32_t finishPoints, uint32_t time, uint8_t stars, bool lowerPointsAreBetter)
 {
 	_lastPlayedMap = mapname;
 
@@ -309,12 +316,18 @@ bool CampaignManager::updateMapValues (const std::string& mapname, uint32_t fini
 		return false;
 	}
 
-	const bool alreadyPlayed = map->getTime() > 0;
+	const bool alreadyPlayed = map->getTime() > 0 || map->getFinishPoints() > 0;
 	if (map->getStars() < stars)
 		map->setStars(stars);
 	map->setTime(time);
-	if (map->getFinishPoints() < finishPoints)
-		map->setFinishPoints(finishPoints);
+	if (lowerPointsAreBetter) {
+		const int p = map->getFinishPoints();
+		if (p <= 0 || p > finishPoints)
+			map->setFinishPoints(finishPoints);
+	} else {
+		if (map->getFinishPoints() < finishPoints)
+			map->setFinishPoints(finishPoints);
+	}
 
 	if (alreadyPlayed) {
 		_activeCampaign->saveProgress();
@@ -384,6 +397,16 @@ bool CampaignManager::continuePlay ()
 	startMap(map);
 
 	return true;
+}
+
+bool CampaignManager::firstMap () const
+{
+	const CampaignPtr& c = getAutoActiveCampaign();
+	if (!c) {
+		error(LOG_CAMPAIGN, "could not find any active campaign");
+		return false;
+	}
+	return c->getId() == "tutorial" && c->firstMap();
 }
 
 void CampaignManager::startMap (const std::string& map)

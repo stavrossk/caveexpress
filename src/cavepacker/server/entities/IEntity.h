@@ -44,17 +44,35 @@ protected:
 	EntityObservers _observers;
 
 	Map& _map;
+	int _col;
+	int _row;
+	float _angle;
+	uint8_t _state;
 
 public:
-	IEntity (const EntityType &type, Map& map);
+	IEntity (const EntityType &type, Map& map, int col, int row);
 
 	virtual ~IEntity ();
+
+	inline int getRow() const { return _row; }
+	inline int getCol() const { return _col; }
+
+	virtual bool setPos (int col, int row);
 
 	// called when the entity is added to the world
 	virtual void onSpawn ();
 
 	// returns the angle of the entity in radians
 	virtual float getAngle () const;
+
+	inline uint8_t getState () const { return _state; }
+	uint8_t setState (uint8_t state);
+
+	// angle in radians
+	inline void setAngle (float angle)
+	{
+		_angle = angle;
+	}
 
 	virtual void update (uint32_t deltaTime);
 
@@ -156,7 +174,7 @@ public:
 	virtual inline operator std::string () const
 	{
 		std::stringstream ss;
-		ss << "IEntity " << _id;
+		ss << "IEntity " << _id << ", col: " << _col << ", row: " << _row;
 		return ss.str();
 	}
 

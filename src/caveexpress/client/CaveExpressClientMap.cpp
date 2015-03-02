@@ -3,6 +3,8 @@
 #include "caveexpress/client/entities/ClientWindowTile.h"
 #include "caveexpress/client/entities/ClientCaveTile.h"
 #include "caveexpress/shared/network/messages/ProtocolMessages.h"
+#include "engine/client/particles/Bubble.h"
+#include "engine/client/particles/Snow.h"
 #include "engine/client/particles/Sparkle.h"
 #include "engine/common/MapSettings.h"
 #include "engine/common/network/messages/StopMovementMessage.h"
@@ -16,6 +18,7 @@
 #include "engine/client/sound/Sound.h"
 #include "engine/common/ConfigManager.h"
 #include "engine/common/EventHandler.h"
+#include "engine/common/Logger.h"
 #include "engine/common/ServiceProvider.h"
 #include "engine/common/GLShared.h"
 #include "engine/common/ExecutionTime.h"
@@ -36,23 +39,21 @@ void CaveExpressClientMap::resetCurrentMap ()
 
 void CaveExpressClientMap::renderWater (int x, int y) const
 {
-	const float waterHeight = getWaterHeight();
-	if (waterHeight <= 0.000001f)
-		return;
-	x += _screenRumbleOffsetX;
-	y += _screenRumbleOffsetY;
-	const int waterHeightPixel = waterHeight * _scale;
-
-	const int mapPosY = y + _y;
-	const int yWater = mapPosY + waterHeightPixel;
-	const int widthWater = _frontend->getWidth();
-	const Color waterLineColor = { 0.99f, 0.99f, 1.0f, 1.0f };
+	static const Color waterLineColor = { 0.99f, 0.99f, 1.0f, 1.0f };
 	static const Color color = { WATERCOLOR[0] / 255.0f, WATERCOLOR[1] / 255.0f, WATERCOLOR[2] / 255.0f, WATER_ALPHA
 			/ 255.0f };
-	_frontend->renderLine(x + _x, yWater - 1, x + _x + widthWater, yWater - 1, waterLineColor);
-	const int xWater = x + _x;
-	const int heightWater = _frontend->getHeight() - yWater;
-	_frontend->renderFilledRect(xWater, yWater, widthWater, heightWater, color);
+	if (getWaterHeight() <= 0.000001f)
+		return;
+	const int widthWater = getPixelWidth() * _zoom;
+	const int waterSurface = y + getWaterSurface() * _zoom;
+	const int waterGround = y + getWaterGround() * _zoom;
+	const int waterHeight = waterGround - waterSurface;
+	_frontend->renderLine(x, waterSurface - 1, x + widthWater, waterSurface - 1, waterLineColor);
+	_frontend->renderFilledRect(x, waterSurface, widthWater, waterHeight, color);
+	if (Config.isDebug()) {
+		_frontend->renderLine(x, waterSurface, x + widthWater, waterSurface, colorRed);
+		_frontend->renderLine(x, waterGround, x + widthWater, waterGround, colorGreen);
+	}
 }
 
 bool CaveExpressClientMap::drop ()
@@ -99,6 +100,32 @@ void CaveExpressClientMap::couldNotFindEntity (const std::string& prefix, uint16
 	}
 }
 
+void CaveExpressClientMap::init (uint16_t playerID) {
+	ClientMap::init(playerID);
+	// TODO: also take the non water height into account - so not have the amount of bubbles
+	// on a small area when the water is rising
+	const int bubbles = getWidth() / 100;
+	for (int i = 0; i < bubbles; ++i) {
+		_particleSystem.spawn(ParticlePtr(new Bubble(*this)));
+	}
+
+	const bool xmas = dateutil::isXmas();
+	if (xmas || ThemeTypes::isIce(*_theme)) {
+		// TODO: also take the non water height into account - so not have the amount of flakes
+		// on a small area when the water is rising
+		const int snowFlakes = getWidth() / 10;
+		for (int i = 0; i < snowFlakes; ++i) {
+			_particleSystem.spawn(ParticlePtr(new Snow(*this)));
+		}
+	}
+}
+
+void CaveExpressClientMap::renderParticles (int x, int y) const
+{
+	ClientMap::renderParticles(x, y);
+	renderWater(x, y);
+}
+
 void CaveExpressClientMap::start () {
 	ClientMap::start();
 	for (ClientEntityMapConstIter i = _entities.begin(); i != _entities.end(); ++i) {
@@ -118,34 +145,4 @@ void CaveExpressClientMap::start () {
 			_particleSystem.spawn(ParticlePtr(new Sparkle(*this, startX, startY, sizeW, sizeH)));
 		}
 	}
-}
-
-void CaveExpressClientMap::render (int x, int y) const
-{
-	ExecutionTime renderTime("ClientMapRender", 2000L);
-	const int baseX = x + _x + _camera.getViewportX();
-	const int baseY = y + _y + _camera.getViewportY();
-	int layerX = baseX;
-	int layerY = baseY;
-	getLayerOffset(layerX, layerY);
-
-	_frontend->enableScissor(layerX, layerY,
-			std::min(getWidth() - layerX, _mapWidth * _scale),
-			std::min(getHeight() - layerY, _mapHeight * _scale));
-	renderLayer(layerX, layerY, LAYER_BACK);
-	renderLayer(layerX, layerY, LAYER_MIDDLE);
-	renderLayer(layerX, layerY, LAYER_FRONT);
-
-	if (_restartDue != 0) {
-		renderFadeOutOverlay(x, y);
-	}
-
-	Config.setDebugRendererData(layerX, layerY, getWidth(), getHeight(), _scale);
-	Config.getDebugRenderer().render();
-
-	renderWater(x + _x, layerY);
-
-	_particleSystem.render(_frontend, layerX, layerY);
-
-	_frontend->disableScissor();
 }

@@ -9,6 +9,14 @@
 #include "darwin-config.h"
 #endif
 
+#ifdef __ANDROID__
+#include "android-config.h"
+#endif
+
+#ifdef __EMSCRIPTEN__
+#include "html5-config.h"
+#endif
+
 #ifdef __WIN64__
 #include "mingw64_64.h"
 #elif defined __WIN32__

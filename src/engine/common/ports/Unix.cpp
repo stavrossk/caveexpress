@@ -1,5 +1,4 @@
 #include "Unix.h"
-#include "engine/common/Version.h"
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <dirent.h>
@@ -25,6 +24,7 @@
 #include "engine/common/ConfigManager.h"
 #include "engine/common/String.h"
 #include "engine/common/System.h"
+#include "engine/common/Application.h"
 #ifdef HAVE_EXECINFO_H
 #include <execinfo.h>
 #include <signal.h>
@@ -33,10 +33,16 @@
 #ifdef HAVE_SYSLOG_H
 #include <syslog.h>
 #endif
+#include <signal.h>
 
 Unix::Unix() :
 		ISystem()
 {
+	void (*handler)(int);
+	handler = signal(SIGPIPE, SIG_IGN);
+	if (handler != SIG_DFL) {
+		signal(SIGPIPE, handler);
+	}
 	struct passwd *p;
 
 	if ((p = getpwuid(getuid())) == nullptr)
@@ -45,7 +51,7 @@ Unix::Unix() :
 		_user = p->pw_name;
 #ifdef HAVE_SYSLOG_H
 	setlogmask(LOG_UPTO(LOG_INFO));
-	openlog(APPNAME, LOG_NDELAY|LOG_PID, LOG_USER);
+	openlog(Singleton<Application>::getInstance().getName().c_str(), LOG_NDELAY|LOG_PID, LOG_USER);
 #endif
 #ifdef HAVE_EXECINFO_H
 	signal(SIGFPE, globalSignalHandler);
@@ -111,7 +117,7 @@ std::string Unix::getHomeDirectory ()
 		dir = std::string(homeDir);
 	}
 
-	dir += "/" APPNAME "/";
+	dir += "/" + Singleton<Application>::getInstance().getName() + "/";
 	if (!mkdir(dir))
 		return "";
 	return dir;
@@ -194,22 +200,18 @@ void Unix::exit (const std::string& reason, int errorCode)
 	if (errorCode != 0) {
 		logError(reason);
 		backtrace(reason.c_str());
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", reason.c_str(), nullptr);
-#endif
 	} else {
 		logOutput(reason);
 	}
 
 #ifdef DEBUG
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 	SDL_TriggerBreakpoint();
-#endif
 #endif
 	::exit(errorCode);
 }
 
-int Unix::openURL (const std::string& url) const
+int Unix::openURL (const std::string& url, bool) const
 {
 	const std::string cmd = "xdg-open \"" + url + "\"";
 	return system(cmd.c_str());
@@ -272,6 +274,7 @@ char* appendMessage(char* buf, const char* end, const char* fmt, ...) {
 	va_start(argList, fmt);
 	const int maxBytes = end - buf;
 	const int num = vsnprintf(buf, maxBytes, fmt, argList);
+	va_end(argList);
 	if (num >= maxBytes)
 		// output would have been truncated
 		return buf;

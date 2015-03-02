@@ -1,28 +1,31 @@
 #pragma once
 
 #include "engine/GameRegistry.h"
-#include "caveexpress/server/GameLogic.h"
 #include "engine/common/campaign/CampaignManager.h"
 #include "engine/common/campaign/persister/SQLitePersister.h"
+#include "caveexpress/server/map/Map.h"
 
 class ClientMap;
 
-class CaveExpress: public IGame {
+class CaveExpress: public IGame, public IEntityVisitor {
 private:
-	GameLogic _game;
 	IGameStatePersister* _persister;
 	CampaignManager *_campaignManager;
-	ClientMap *_map;
-
+	ClientMap *_clientMap;
+	Map _map;
+	int32_t _updateEntitiesTime;
+	IFrontend *_frontend;
+	ServiceProvider *_serviceProvider;
+	char _connectedClients;
+	int _packageCount;
+	int32_t _loadDelay;
+	std::string _loadDelayName;
 public:
 	CaveExpress();
 	virtual ~CaveExpress();
 
-	void connect () override;
 	void initUI (IFrontend* frontend, ServiceProvider& serviceProvider) override;
-	void initSoundCache () override;
 	void update (uint32_t deltaTime) override;
-	void onData (ClientId clientId, ByteStream &data) override;
 	std::string getMapName () override;
 	void init (IFrontend *frontend, ServiceProvider& serviceProvider) override;
 	void shutdown () override;
@@ -33,7 +36,11 @@ public:
 	void mapShutdown () override;
 	bool mapLoad (const std::string& map) override;
 	IMapManager* getMapManager () override;
-	UIWindow* createPopupWindow (IFrontend* frontend, const std::string& text, int flags, UIPopupCallbackPtr callback) override;
+	Map& getMap ();
+
+private:
+	// IEntityVisitor
+	bool visitEntity (IEntity *entity) override;
 };
 
 static GameRegisterStatic CAVEEXPRESS("caveexpress", GamePtr(new CaveExpress()));

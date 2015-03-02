@@ -1,6 +1,7 @@
 #include "UI.h"
 #include "engine/client/ui/nodes/UINodeBar.h"
 #include "engine/client/ui/BitmapFont.h"
+#include "engine/client/ui/windows/UIPopupWindow.h"
 #include "engine/client/ui/FontDefinition.h"
 #include "engine/common/EventHandler.h"
 #include "engine/common/FileSystem.h"
@@ -9,12 +10,14 @@
 #include "engine/common/CommandSystem.h"
 #include "engine/common/Commands.h"
 #include "engine/common/ConfigManager.h"
-#include "engine/client/ui/windows/listener/QuitPopupCallback.h"
 #include "engine/common/ServiceProvider.h"
 #include "engine/common/Singleton.h"
 #include "engine/common/FileSystem.h"
 #include "engine/GameRegistry.h"
+#include "engine/common/gestures/ZoomIn.h"
+#include "engine/common/gestures/ZoomOut.h"
 #include <SDL.h>
+#include <SDL_stdinc.h>
 
 #define GETSCALE_W(x) (x) = (static_cast<float>(x + _frontend->getCoordinateOffsetX()) / _frontend->getWidthScale())
 #define GETSCALE_H(y) (y) = (static_cast<float>(y + _frontend->getCoordinateOffsetY()) / _frontend->getHeightScale())
@@ -64,6 +67,7 @@ void UI::restart ()
 
 void UI::shutdown ()
 {
+	System.track("step", "shutdownui");
 	for (UIWindowMapIter i = _windows.begin(); i != _windows.end(); ++i) {
 		delete i->second;
 	}
@@ -136,16 +140,17 @@ const std::string UI::translate (const std::string& in) const
 
 void UI::init (ServiceProvider& serviceProvider, EventHandler &eventHandler, IFrontend &frontend)
 {
+	System.track("step", "initui");
 	const std::string& language = Config.getLanguage();
 	if (!initLanguage(language))
 		initLanguage("en_GB");
-	Commands.registerCommand(CMD_UI_PRINTSTACK, bind(UI, printStack));
-	Commands.registerCommand(CMD_UI_PUSH, bind(UI, pushCmd));
-	Commands.registerCommand(CMD_UI_RESTART, bind(UI, initRestart));
-	Commands.registerCommand(CMD_UI_POP, bind(UI, pop));
-	Commands.registerCommand(CMD_UI_FOCUS_NEXT, bind(UI, focusNext));
-	Commands.registerCommand(CMD_UI_FOCUS_PREV, bind(UI, focusPrev));
-	Commands.registerCommand(CMD_UI_EXECUTE, bind(UI, runFocusNode));
+	Commands.registerCommand(CMD_UI_PRINTSTACK, bindFunction(UI, printStack));
+	Commands.registerCommand(CMD_UI_PUSH, bindFunction(UI, pushCmd));
+	Commands.registerCommand(CMD_UI_RESTART, bindFunction(UI, initRestart));
+	Commands.registerCommand(CMD_UI_POP, bindFunction(UI, pop));
+	Commands.registerCommand(CMD_UI_FOCUS_NEXT, bindFunction(UI, focusNext));
+	Commands.registerCommand(CMD_UI_FOCUS_PREV, bindFunction(UI, focusPrev));
+	Commands.registerCommand(CMD_UI_EXECUTE, bindFunction(UI, runFocusNode));
 	_showCursor = Config.getConfigVar("showcursor", System.wantCursor() ? "true" : "false", true)->getBoolValue();
 	_cursor = _showCursor;
 	if (_cursor)
@@ -171,6 +176,27 @@ void UI::init (ServiceProvider& serviceProvider, EventHandler &eventHandler, IFr
 	Singleton<GameRegistry>::getInstance().getGame()->initUI(_frontend, serviceProvider);
 
 	_mouseCursor = loadTexture("mouse");
+
+	loadGesture(zoominGesture, SDL_arraysize(zoominGesture));
+	loadGesture(zoomoutGesture, SDL_arraysize(zoomoutGesture));
+}
+
+bool UI::loadGesture (const unsigned char* data, int length)
+{
+	SDL_RWops* rwops = SDL_RWFromConstMem(static_cast<const void*>(data), length);
+	const int n = SDL_LoadDollarTemplates(-1, rwops);
+	SDL_RWclose(rwops);
+	if (n == -1) {
+		const std::string e = SDL_GetError();
+		error(LOG_CLIENT, "Failed to load gesture: " + e);
+		return false;
+	} else if (n == 0) {
+		info(LOG_CLIENT, "Could not load gesture");
+		return false;
+	}
+
+	info(LOG_CLIENT, "Loaded gesture");
+	return true;
 }
 
 void UI::initStack ()
@@ -219,7 +245,8 @@ void UI::progressInit (int steps, const std::string& text)
 void UI::progressStep (const std::string& text)
 {
 	++_progress.step;
-	_frontend->render();
+	if (_frontend != nullptr)
+		_frontend->render();
 }
 
 void UI::progressDone ()
@@ -293,6 +320,10 @@ void UI::update (uint32_t deltaTime)
 	for (UIStackReverseIter i = stack.rbegin(); i != stack.rend(); ++i) {
 		UIWindow* window = *i;
 		window->update(deltaTime);
+	}
+
+	for (Fonts::iterator i = _fonts.begin(); i != _fonts.end(); ++i) {
+		i->second->update(deltaTime);
 	}
 }
 
@@ -530,6 +561,54 @@ void UI::onJoystickButtonPress (uint8_t button)
 	debug(LOG_CLIENT, String::format("joystick button %i was pressed and not handled", (int)button));
 }
 
+void UI::onMultiGesture (float theta, float dist, int32_t numFingers)
+{
+	if (_restart)
+		return;
+
+	UIStack stack = _stack;
+	for (UIStackReverseIter i = stack.rbegin(); i != stack.rend(); ++i) {
+		UIWindow* window = *i;
+		if (window->onMultiGesture(theta, dist, numFingers))
+			return;
+		if (window->isModal() || window->isFullscreen())
+			return;
+	}
+	debug(LOG_CLIENT, "multi gesture event was not handled");
+}
+
+void UI::onGesture (int64_t gestureId, float error, int32_t numFingers)
+{
+	if (_restart)
+		return;
+
+	UIStack stack = _stack;
+	for (UIStackReverseIter i = stack.rbegin(); i != stack.rend(); ++i) {
+		UIWindow* window = *i;
+		if (window->onGesture(gestureId, error, numFingers))
+			return;
+		if (window->isModal() || window->isFullscreen())
+			return;
+	}
+	debug(LOG_CLIENT, "gesture event was not handled");
+}
+
+void UI::onGestureRecord (int64_t gestureId)
+{
+	if (_restart)
+		return;
+
+	UIStack stack = _stack;
+	for (UIStackReverseIter i = stack.rbegin(); i != stack.rend(); ++i) {
+		UIWindow* window = *i;
+		if (window->onGestureRecord(gestureId))
+			return;
+		if (window->isModal() || window->isFullscreen())
+			return;
+	}
+	debug(LOG_CLIENT, "gesture record event was not handled");
+}
+
 void UI::onControllerButtonPress (const std::string& button)
 {
 	if (_restart)
@@ -625,6 +704,7 @@ UIWindow* UI::push (const std::string& windowID)
 		return nullptr;
 
 	info(LOG_CLIENT, "push window " + windowID);
+	System.track("pushwindow", window->getId());
 	if (!_stack.empty()) {
 		UIWindow* activeWindow = *_stack.rbegin();
 		activeWindow->onPushedOver();
@@ -663,7 +743,7 @@ void UI::pop ()
 		return;
 
 	if (_stack.size() == 1) {
-		UIPopupCallbackPtr c(new QuitPopupCallback());
+		UIPopupCallbackPtr c(new UIPopupOkCommandCallback(CMD_QUIT));
 		UI::get().popup(tr("Quit"), UIPOPUP_OK | UIPOPUP_CANCEL, c);
 		return;
 	}
@@ -673,7 +753,7 @@ void UI::pop ()
 		return;
 
 	info(LOG_CLIENT, "pop window " + window->getId());
-
+	System.track("popwindow", window->getId());
 	_stack.pop_back();
 	_stack.back()->onActive();
 
@@ -710,7 +790,7 @@ void UI::popMain ()
 void UI::popup (const std::string& text, int flags, UIPopupCallbackPtr callback)
 {
 	info(LOG_CLIENT, "push popup");
-	UIWindow* popupWindow = Singleton<GameRegistry>::getInstance().getGame()->createPopupWindow(_frontend, text, flags, callback);
+	UIWindow* popupWindow = new UIPopupWindow(_frontend, text, flags, callback);
 	if (popupWindow == nullptr)
 		return;
 	_stack.push_back(popupWindow);
@@ -749,4 +829,8 @@ UINodeBar* UI::setBarMax (const std::string& window, const std::string& nodeId, 
 	}
 	node->setMax(max);
 	return node;
+}
+
+void UIPopupCallback::onCancel() {
+	UI::get().delayedPop();
 }

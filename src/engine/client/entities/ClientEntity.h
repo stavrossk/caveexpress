@@ -7,7 +7,7 @@
 #include "engine/client/sprites/Sprite.h"
 #include "engine/common/SpriteDefinition.h"
 #include "engine/common/Pointers.h"
-#include "Box2D/Common/b2Math.h"
+#include <Box2D/Common/b2Math.h>
 #include <map>
 #include <string>
 
@@ -32,11 +32,12 @@ public:
 
 	void remove();
 	const SpritePtr& getSprite () const;
+	SpritePtr& getSprite ();
 	const vec2& getPos () const;
 	const vec2& getSize () const;
 	virtual bool update (uint32_t deltaTime, bool lerpPos);
 	void setAnimationType (const Animation& type);
-	void setPos (const vec2& pos);
+	void setPos (const vec2& pos, bool lerp);
 	Direction getMoveDirection ();
 	void setAngle (int16_t angle);
 	void initFadeOut ();
@@ -58,6 +59,11 @@ public:
 		_screenHeight = height;
 	}
 
+	inline void setAlpha (float alpha)
+	{
+		_alpha = alpha;
+	}
+
 	inline void getScreenSize (int& width, int& height) const
 	{
 		width = _screenWidth;
@@ -76,13 +82,18 @@ public:
 		y = _screenPosY;
 	}
 
+	inline uint8_t getState () const
+	{
+		return _state;
+	}
+
 	inline void setAnimationSound (int animationSound)
 	{
 		_animationSound = animationSound;
 	}
 
 	// @param[in] scale The conversion from the physics coordinate system to the pixel coordinate system.
-	virtual void render (IFrontend *frontend, Layer layer, int scale, int offsetX = 0, int offsetY = 0) const;
+	virtual void render (IFrontend *frontend, Layer layer, int scale, float zoom, int offsetX = 0, int offsetY = 0) const;
 
 	inline const Animation& getAnimation () const
 	{
@@ -169,6 +180,11 @@ inline void ClientEntity::setAngle (int16_t angle)
 }
 
 inline const SpritePtr& ClientEntity::getSprite () const
+{
+	return _currSprite;
+}
+
+inline SpritePtr& ClientEntity::getSprite ()
 {
 	return _currSprite;
 }

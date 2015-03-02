@@ -2,7 +2,7 @@
 
 #include "engine/common/ports/Unix.h"
 #include "engine/common/String.h"
-#include "engine/common/Version.h"
+#include "engine/common/Application.h"
 #include <string>
 #include <vector>
 #include <jni.h>
@@ -26,6 +26,7 @@ private:
 	jmethodID _minimize;
 	jmethodID _getPaymentEntries;
 	jmethodID _getLocale;
+	jmethodID _achievementUnlocked;
 
 	int _externalState;
 
@@ -37,12 +38,14 @@ public:
 	Android ();
 	virtual ~Android ();
 
+	void init() override;
+
 	void logError (const std::string& error) const override {
-		__android_log_write(ANDROID_LOG_ERROR, APPFULLNAME, error.c_str());
+		__android_log_write(ANDROID_LOG_ERROR, Singleton<Application>::getInstance().getName().c_str(), error.c_str());
 	}
 
 	void logOutput (const std::string& string) const override {
-		__android_log_write(ANDROID_LOG_INFO, APPFULLNAME, string.c_str());
+		__android_log_write(ANDROID_LOG_INFO, Singleton<Application>::getInstance().getName().c_str(), string.c_str());
 	}
 
 	void notifyPaymentLoaded ();
@@ -54,12 +57,13 @@ public:
 	DirectoryEntries listDirectory (const std::string& basedir, const std::string& subdir = "") override;
 	void showAds (bool show) override;
 	bool showFullscreenAds () override;
-	int openURL (const std::string& url) const override;
+	bool isFullscreenSupported () override { return false; }
+	int openURL (const std::string& url, bool newWindow) const override;
 	void exit (const std::string& reason, int errorCode) override;
 	std::string getHomeDirectory () override;
 	std::string getCurrentWorkingDir () override { return ""; }
 	std::string getDatabaseDirectory () override;
-	void achievementUnlocked (const std::string& id) override;
+	void achievementUnlocked (const std::string& id, bool increment) override;
 	bool hasAchievement (const std::string& id) override;
 	bool hasTouch () const override;
 	bool quit () override;
@@ -74,4 +78,5 @@ public:
 	bool hasMouseOrFinger () override;
 	bool canDisableJoystick () override { return !isOUYA(); }
 	bool wantBackButton () override { return isOUYA(); }
+	bool supportGooglePlay () { return !isOUYA(); }
 };

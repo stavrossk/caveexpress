@@ -1,9 +1,9 @@
 #include "Android.h"
 #include "engine/common/Logger.h"
-#include "engine/common/Version.h"
 #include "engine/common/Payment.h"
 #include "engine/common/Config.h"
 #include "engine/common/System.h"
+#include "engine/common/ConfigManager.h"
 #include <SDL_config.h>
 #include <SDL_assert.h>
 #include <SDL_main.h>
@@ -55,7 +55,7 @@ protected:
 };
 int LocalReferenceHolder::s_active;
 
-#define _ANDROID_LOG(prio, fmt, args...) __android_log_print(prio, APPFULLNAME, fmt, ## args)
+#define _ANDROID_LOG(prio, fmt, args...) __android_log_print(prio, Singleton<Application>::getInstance().getName().c_str(), fmt, ## args)
 #define _logDebug(fmt, args...) _ANDROID_LOG(ANDROID_LOG_DEBUG, fmt, ##args)
 #define _logInfo(fmt, args...) _ANDROID_LOG(ANDROID_LOG_INFO, fmt, ##args)
 #define _logWarn(fmt, args...) _ANDROID_LOG(ANDROID_LOG_WARN, fmt, ##args)
@@ -64,7 +64,10 @@ int LocalReferenceHolder::s_active;
 Android::Android () :
 		Unix(), _env(nullptr), _cls(nullptr), _assetManager(nullptr), _showAds(nullptr), _hideAds(nullptr),
 		_showFullscreenAds(nullptr), _openURL(nullptr), _buyItem(nullptr), _hasItem(nullptr), _isOUYA(nullptr),
-		_minimize(nullptr), _getPaymentEntries(nullptr), _externalState(0) {
+		_isSmallScreen(nullptr), _minimize(nullptr), _getPaymentEntries(nullptr), _externalState(0) {
+}
+
+void Android::init() {
 	LocalReferenceHolder refs;
 
 	JNIEnv *env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
@@ -116,6 +119,7 @@ Android::Android () :
 	_buyItem = env->GetStaticMethodID(_cls, "buyItem", "(Ljava/lang/String;)Z");
 	_hasItem = env->GetStaticMethodID(_cls, "hasItem", "(Ljava/lang/String;)Z");
 	_track = env->GetStaticMethodID(_cls, "track", "(Ljava/lang/String;Ljava/lang/String;)Z");
+	_achievementUnlocked = env->GetStaticMethodID(_cls, "achievementUnlocked", "(Ljava/lang/String;Z)V");
 	_isOUYA = env->GetStaticMethodID(_cls, "isOUYA", "()Z");
 	_isSmallScreen = env->GetStaticMethodID(_cls, "isSmallScreen", "()Z");
 	_minimize = env->GetStaticMethodID(_cls, "minimize", "()V");
@@ -157,6 +161,9 @@ Android::Android () :
 	}
 	if (_getLocale == 0) {
 		error(LOG_SYSTEM, "error getting getLocale()");
+	}
+	if (_achievementUnlocked == 0) {
+		error(LOG_SYSTEM, "error getting achievementUnlocked()");
 	}
 
 	info(LOG_SYSTEM, String::format("Running on: [%s] [%s] [%s] [%s] [%s] SDK:%s ABI:%s",
@@ -337,13 +344,31 @@ void Android::showAds (bool show)
 	}
 }
 
-void Android::achievementUnlocked (const std::string& id)
+void Android::achievementUnlocked (const std::string& id, bool increment)
 {
+	if (_achievementUnlocked == 0) {
+		error(LOG_SYSTEM, "failed to unlock achievement");
+		return;
+	}
+
+	LocalReferenceHolder refs;
+
+	if (_env == nullptr || !refs.init(_env)) {
+		error(LOG_SYSTEM, "error while calling achievementUnlocked");
+		return;
+	}
+
+	jstring idJavaStr = _env->NewStringUTF(id.c_str());
+	jboolean incrementBool = (jboolean)increment;
+	_env->CallStaticVoidMethod(_cls, _achievementUnlocked, idJavaStr, incrementBool);
+	_env->DeleteLocalRef(idJavaStr);
+
+	testException();
 }
 
 bool Android::hasAchievement (const std::string& id)
 {
-	return false;
+	return true;
 }
 
 bool Android::track (const std::string& hitType, const std::string& screenName)
@@ -523,7 +548,7 @@ bool Android::isOUYA () const
     return _env->CallStaticBooleanMethod(_cls, _isOUYA);
 }
 
-int Android::openURL (const std::string& url) const
+int Android::openURL (const std::string& url, bool) const
 {
 	if (_openURL == 0)
 		return -1;
@@ -568,7 +593,7 @@ int Android::getAdHeight() const
 
 extern "C" JNIEXPORT void JNICALL Java_org_base_BaseActivity_onPaymentDone(JNIEnv* env, jclass jcls)
 {
-	info(LOG_SYSTEM, "onPaymentDone CaveExpress side");
+	info(LOG_SYSTEM, "onPaymentDone c side");
 	Android& s = static_cast<Android&>(getSystem());
 	s.notifyPaymentLoaded();
 }
@@ -584,6 +609,14 @@ extern "C" JNIEXPORT jboolean JNICALL Java_org_base_BaseActivity_isDebug(JNIEnv*
 	return debug;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL Java_org_base_BaseActivity_isTrackingOptOut(JNIEnv* env, jclass jcls)
+{
+	info(LOG_SYSTEM, "isTrackingOptOut c side");
+	// TODO:
+	jboolean optout = 0;
+	return optout;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL Java_org_base_BaseActivity_isHD(JNIEnv* env, jclass jcls)
 {
 	jboolean hd;
@@ -593,4 +626,22 @@ extern "C" JNIEXPORT jboolean JNICALL Java_org_base_BaseActivity_isHD(JNIEnv* en
 	hd = 0;
 #endif
 	return hd;
+}
+
+extern "C" JNIEXPORT void JNICALL Java_org_base_BaseActivity_onPersisterConnectFailed(JNIEnv* env, jclass jcls)
+{
+	error(LOG_SYSTEM, "google play connection failed");
+	Config.getConfigVar("googleplaystate", "false", true)->setValue("false");
+}
+
+extern "C" JNIEXPORT void JNICALL Java_org_base_BaseActivity_onPersisterConnectSuccess(JNIEnv* env, jclass jcls)
+{
+	info(LOG_SYSTEM, "google play connection succeeds");
+	Config.getConfigVar("googleplaystate", "false", true)->setValue("true");
+}
+
+extern "C" JNIEXPORT void JNICALL Java_org_base_BaseActivity_onPersisterDisconnect(JNIEnv* env, jclass jcls)
+{
+	info(LOG_SYSTEM, "google play disconnect");
+	Config.getConfigVar("googleplaystate", "false", true)->setValue("false");
 }

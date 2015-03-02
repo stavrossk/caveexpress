@@ -1,6 +1,6 @@
 #include "IOS.h"
 #include "Cocoa.h"
-#include "engine/common/Version.h"
+#include "engine/common/Application.h"
 
 IOS::IOS () :
 		Unix()
@@ -14,7 +14,7 @@ IOS::~IOS ()
 
 std::string IOS::getHomeDirectory ()
 {
-	char* home = nsGetHomeDirectory(APPNAME);
+	char* home = nsGetHomeDirectory(Singleton<Application>::getInstance().getName());
 	if (home == nullptr)
 		return "";
 	return home;
@@ -25,7 +25,7 @@ void IOS::showAds (bool show)
 	// TODO:
 }
 
-int IOS::openURL (const std::string& url) const
+int IOS::openURL (const std::string& url, bool) const
 {
 	const std::string cmd = "open " + url;
 	system(cmd.c_str());

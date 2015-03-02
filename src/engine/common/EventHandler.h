@@ -10,6 +10,8 @@ union SDL_Event;
 
 class EventHandler {
 private:
+	bool _multiGesture;
+
 	typedef std::vector<IEventObserver*> EventObservers;
 	EventObservers _observers;
 
@@ -49,4 +51,7 @@ public:
 	void fingerPress (int64_t finger, float x, float y);
 	void fingerRelease (int64_t finger, float x, float y);
 	void fingerMotion (int64_t finger, float x, float y, float dx, float dy);
+	void gestureRecord (int64_t gestureId);
+	void gesture (int64_t gestureId, float error, int32_t numFingers);
+	void multiGesture (float theta, float dist, int32_t numFingers);
 };

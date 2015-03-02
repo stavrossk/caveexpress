@@ -2,36 +2,45 @@
 
 #include "engine/client/ui/UI.h"
 #include "engine/common/Pointers.h"
+#include "engine/common/network/INetwork.h"
 #include "engine/common/network/IProtocolHandler.h"
 #include "engine/common/MapManager.h"
+#include "engine/common/ConfigManager.h"
+#include "engine/common/Commands.h"
+#include "engine/common/CommandSystem.h"
+#include "engine/common/campaign/CampaignManager.h"
+#include <string>
 
 // TODO: rename methods and document stuff
-class IGame {
+class IGame : public ICampaignManagerListener {
+protected:
+	std::string _name;
 public:
 	virtual ~IGame() {
 	}
 
-	virtual void initSoundCache () {}
+	inline void setName(const std::string& name) {
+		_name = name;
+	}
 
-	// called to connect to a local running server
-	virtual void connect () {}
+	inline const std::string& getName() const {
+		return _name;
+	}
 
 	// create the windows
 	virtual void initUI (IFrontend* frontend, ServiceProvider& serviceProvider) {}
 
 	virtual void update (uint32_t deltaTime) {}
 
-	virtual void onData (ClientId clientId, ByteStream &data) {}
-
 	virtual std::string getMapName () { return ""; }
+
+	virtual int getMaxClients () { return MAX_CLIENTS; }
 
 	virtual void shutdown () {}
 
 	virtual int getPlayers () { return -1; }
 
 	virtual void connect (ClientId clientId) {}
-
-	virtual UIWindow* createPopupWindow (IFrontend* frontend, const std::string& text, int flags, UIPopupCallbackPtr callback) { return nullptr; }
 
 	virtual int disconnect (ClientId clientId) { return -1; }
 
@@ -44,6 +53,9 @@ public:
 	virtual void mapShutdown () {}
 
 	virtual IMapManager* getMapManager () { return nullptr; }
+
+	// ICampaignManagerListener
+	void onCampaignUnlock (Campaign* oldCampaign, Campaign* newCampaign) override;
 };
 
 typedef SharedPtr<IGame> GamePtr;

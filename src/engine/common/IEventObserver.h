@@ -124,4 +124,16 @@ public:
 	virtual void onWindowResize ()
 	{
 	}
+
+	virtual void onMultiGesture (float theta, float dist, int32_t numFingers)
+	{
+	}
+
+	virtual void onGesture (int64_t gestureId, float error, int32_t numFingers)
+	{
+	}
+
+	virtual void onGestureRecord (int64_t gestureId)
+	{
+	}
 };

@@ -2,27 +2,28 @@
 
 #include "engine/GameRegistry.h"
 #include "engine/client/ClientMap.h"
+#include "cavepacker/server/map/Map.h"
 #include "engine/common/campaign/CampaignManager.h"
 #include "engine/common/campaign/persister/IGameStatePersister.h"
 
-class CavePacker: public IGame {
+class CavePacker: public IGame, public IEntityVisitor {
 private:
 	IGameStatePersister* _persister;
 	CampaignManager *_campaignManager;
-	ClientMap *_map;
+	ClientMap *_clientMap;
+	Map _map;
 	IFrontend *_frontend;
 	ServiceProvider* _serviceProvider;
 
+	uint8_t getStars () const;
 public:
 	CavePacker();
 	virtual ~CavePacker();
 
-	void connect () override;
 	void initUI (IFrontend* frontend, ServiceProvider& serviceProvider) override;
-	void initSoundCache () override;
 	void update (uint32_t deltaTime) override;
-	void onData (ClientId clientId, ByteStream &data) override;
 	std::string getMapName () override;
+	int getMaxClients () override;
 	void init (IFrontend *frontend, ServiceProvider& serviceProvider) override;
 	void shutdown () override;
 	int getPlayers () override;
@@ -32,7 +33,10 @@ public:
 	void mapShutdown () override;
 	bool mapLoad (const std::string& map) override;
 	IMapManager* getMapManager () override;
-	UIWindow* createPopupWindow (IFrontend* frontend, const std::string& text, int flags, UIPopupCallbackPtr callback) override;
+
+private:
+	// IEntityVisitor
+	bool visitEntity (IEntity *entity) override;
 };
 
-static GameRegisterStatic CAVEEXPRESS("cavepacker", GamePtr(new CavePacker()));
+static GameRegisterStatic CAVEPACKER("cavepacker", GamePtr(new CavePacker()));

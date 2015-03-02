@@ -1,6 +1,6 @@
 #include "Windows.h"
 #include "engine/common/Logger.h"
-#include "engine/common/Version.h"
+#include "engine/common/Application.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlobj.h>
@@ -121,7 +121,7 @@ std::string Windows::getHomeDirectory ()
 		return "";
 	}
 
-	path.append(pathBuf).append("\\" APPNAME "\\");
+	path.append(pathBuf).append("\\" + Singleton<Application>::getInstance().getName() + "\\");
 	FreeLibrary(shfolder);
 
 	if (!mkdir(path)) {
@@ -183,7 +183,7 @@ void Windows::exit (const std::string& reason, int errorCode)
 	ExitProcess(errorCode);
 }
 
-int Windows::openURL (const std::string& url) const
+int Windows::openURL (const std::string& url, bool) const
 {
 	ShellExecute(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
 	return 0;

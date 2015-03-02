@@ -10,7 +10,7 @@ private:
 	uint32_t _updateDelay;
 public:
 	UINodePoint (IFrontend *frontend, uint32_t updateDelay = 10) :
-			UINodeLabel(frontend, "0", getFont(HUGE_FONT)), _current(0), _points(0), _lastUpdate(0), _updateDelay(
+			UINodeLabel(frontend, "0", getFont(HUGE_FONT)), _current(-1), _points(0), _lastUpdate(0), _updateDelay(
 					updateDelay)
 	{
 		Vector4Set(colorWhite, _fontColor);
@@ -22,27 +22,34 @@ public:
 		if (_current == _points)
 			return;
 
-		if (_points > 0) {
-			const uint32_t passed = _time - _lastUpdate;
-			if (passed > _updateDelay) {
-				_lastUpdate += _updateDelay;
-				++_current;
-				setLabel(string::toString(_current));
-			}
-		}
+		const uint32_t passed = _time - _lastUpdate;
+		if (passed < _updateDelay)
+			return;
+
+		_lastUpdate += _updateDelay;
+		if (_current > _points)
+			--_current;
+		else
+			++_current;
+		setLabel(string::toString(_current));
 	}
 
-	void addPoints (int points)
+	// this will increase the points over time. The given points value is an absolute value
+	void increasePoints (int points)
 	{
 		_points = points;
-		_lastUpdate = _time;
-		_current = clamp(_current, 0, _points);
 	}
 
+	// this will increase the points over time. The given points value is a relative value
+	void addPoints (int points)
+	{
+		_points += points;
+	}
+
+	// this sets the points and starts the increasing from the beginning. The give points value is an absolute value
 	void setPoints (int points)
 	{
 		_current = 0;
 		_points = points;
-		_lastUpdate = _time;
 	}
 };

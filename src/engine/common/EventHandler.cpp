@@ -4,12 +4,10 @@
 #include "engine/common/ConfigManager.h"
 #include <SDL.h>
 
-EventHandler::EventHandler ()
+EventHandler::EventHandler () : _multiGesture(false)
 {
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 	//SDL_JoystickEventState(SDL_DISABLE);
 	SDL_EventState(SDL_JOYAXISMOTION, SDL_ENABLE);
-#endif
 }
 
 EventHandler::~EventHandler ()
@@ -34,14 +32,10 @@ void EventHandler::removeObserver (IEventObserver* observer)
 
 inline std::string EventHandler::getControllerButtonName (uint8_t button) const
 {
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 	const char *name = SDL_GameControllerGetStringForButton(static_cast<SDL_GameControllerButton>(button));
 	if (name == nullptr)
 		return "unknown";
 	return name;
-#else
-	return "unknown";
-#endif
 }
 
 bool EventHandler::handleEvent (SDL_Event &event)
@@ -61,38 +55,29 @@ bool EventHandler::handleEvent (SDL_Event &event)
 			keyPress((int32_t) event.key.keysym.sym, (int16_t) event.key.keysym.mod);
 		break;
 	case SDL_MOUSEMOTION: {
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 		if (event.motion.which == SDL_TOUCH_MOUSEID)
 			break;
 		SDL_Window *window = SDL_GetWindowFromID(event.motion.windowID);
 		if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
 			break;
-#endif
 		mouseMotion(event.motion.x, event.motion.y, event.motion.xrel, event.motion.yrel);
 		break;
 	}
 	case SDL_MOUSEBUTTONDOWN:
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 		if (event.button.which == SDL_TOUCH_MOUSEID)
 			break;
-#endif
 		mouseButtonPress(event.button.x, event.button.y, event.button.button);
 		break;
 	case SDL_MOUSEBUTTONUP:
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 		if (event.button.which == SDL_TOUCH_MOUSEID)
 			break;
-#endif
 		mouseButtonRelease(event.button.x, event.button.y, event.button.button);
 		break;
 	case SDL_MOUSEWHEEL:
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 		if (event.wheel.which == SDL_TOUCH_MOUSEID)
 			break;
-#endif
 		mouseWheel(event.wheel.x, event.wheel.y);
 		break;
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 	case SDL_CONTROLLERAXISMOTION: {
 		const uint8_t axis = event.caxis.axis;
 		if (axis != SDL_CONTROLLER_AXIS_LEFTX && axis != SDL_CONTROLLER_AXIS_LEFTY
@@ -120,7 +105,15 @@ bool EventHandler::handleEvent (SDL_Event &event)
 	case SDL_JOYDEVICEREMOVED:
 		joystickDeviceRemoved(event.jdevice.which);
 		break;
-#endif
+	case SDL_DOLLARRECORD:
+		gestureRecord(event.dgesture.gestureId);
+		break;
+	case SDL_DOLLARGESTURE:
+		gesture(event.dgesture.gestureId, event.dgesture.error, event.dgesture.numFingers);
+		break;
+	case SDL_MULTIGESTURE:
+		multiGesture(event.mgesture.dTheta, event.mgesture.dDist, event.mgesture.numFingers);
+		break;
 	case SDL_JOYHATMOTION:
 		break;
 	case SDL_JOYBUTTONDOWN:
@@ -157,7 +150,6 @@ bool EventHandler::handleEvent (SDL_Event &event)
 
 bool EventHandler::handleAppEvent (SDL_Event &event)
 {
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 	switch (event.type) {
 	case SDL_APP_TERMINATING:
 		prepareShutdown();
@@ -178,7 +170,6 @@ bool EventHandler::handleAppEvent (SDL_Event &event)
 		foreground();
 		return true;
 	}
-#endif
 	return false;
 }
 
@@ -343,6 +334,7 @@ void EventHandler::fingerPress (int64_t finger, float x, float y)
 
 void EventHandler::fingerRelease (int64_t finger, float x, float y)
 {
+	_multiGesture = false;
 	for (EventObservers::iterator i = _observers.begin(); i != _observers.end(); ++i) {
 		(*i)->onFingerRelease(finger, x, y);
 	}
@@ -350,7 +342,31 @@ void EventHandler::fingerRelease (int64_t finger, float x, float y)
 
 void EventHandler::fingerMotion (int64_t finger, float x, float y, float dx, float dy)
 {
+	if (_multiGesture)
+		return;
 	for (EventObservers::iterator i = _observers.begin(); i != _observers.end(); ++i) {
 		(*i)->onFingerMotion(finger, x, y, dx, dy);
+	}
+}
+
+void EventHandler::gestureRecord (int64_t gestureId)
+{
+	for (EventObservers::iterator i = _observers.begin(); i != _observers.end(); ++i) {
+		(*i)->onGestureRecord(gestureId);
+	}
+}
+
+void EventHandler::gesture (int64_t gestureId, float error, int32_t numFingers)
+{
+	for (EventObservers::iterator i = _observers.begin(); i != _observers.end(); ++i) {
+		(*i)->onGesture(gestureId, error, numFingers);
+	}
+}
+
+void EventHandler::multiGesture (float theta, float dist, int32_t numFingers)
+{
+	_multiGesture = true;
+	for (EventObservers::iterator i = _observers.begin(); i != _observers.end(); ++i) {
+		(*i)->onMultiGesture(theta, dist, numFingers);
 	}
 }

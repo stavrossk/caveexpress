@@ -1,12 +1,12 @@
 #include "ConfigPersisterSQL.h"
 #include "engine/common/Logger.h"
-#include "engine/common/Version.h"
+#include "engine/common/Application.h"
 #include "engine/common/System.h"
 
 #define TABLE_NAME "config"
 
 ConfigPersisterSQL::ConfigPersisterSQL() :
-		_sqlite(System.getDatabaseDirectory() + APPNAME ".sqlite")
+		_sqlite(System.getDatabaseDirectory() + Singleton<Application>::getInstance().getName() + ".sqlite")
 {
 	_state = _sqlite.open();
 	if (!_state) {
@@ -76,6 +76,8 @@ void ConfigPersisterSQL::save (const std::map<std::string, ConfigVarPtr>& config
 		info(LOG_STORAGE, "save config var " + name + " with value " + value);
 	}
 	stmt.finish();
+
+	getSystem().syncFiles();
 }
 
 std::string ConfigPersisterSQL::getValue (const std::string& name) const

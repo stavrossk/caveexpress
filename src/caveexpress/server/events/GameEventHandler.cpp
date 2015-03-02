@@ -1,7 +1,6 @@
 #include "GameEventHandler.h"
 #include "engine/common/network/ProtocolHandlerRegistry.h"
 #include "engine/common/ServiceProvider.h"
-#include "engine/common/network/messages/LoadMapMessage.h"
 #include "engine/common/network/messages/MapRestartMessage.h"
 #include "caveexpress/shared/network/messages/ProtocolMessages.h"
 #include "caveexpress/shared/network/messages/RemoveRopeMessage.h"
@@ -10,11 +9,11 @@
 #include "engine/common/network/messages/AddEntityMessage.h"
 #include "caveexpress/shared/network/messages/WaterHeightMessage.h"
 #include "engine/common/network/messages/ChangeAnimationMessage.h"
-#include "caveexpress/shared/network/messages/UpdateHitpointsMessage.h"
-#include "caveexpress/shared/network/messages/UpdateLivesMessage.h"
+#include "engine/common/network/messages/UpdateHitpointsMessage.h"
+#include "engine/common/network/messages/UpdateLivesMessage.h"
 #include "caveexpress/shared/network/messages/UpdateCollectedTypeMessage.h"
 #include "caveexpress/shared/network/messages/AddRopeMessage.h"
-#include "caveexpress/shared/network/messages/TimeRemainingMessage.h"
+#include "engine/common/network/messages/TimeRemainingMessage.h"
 #include "engine/common/network/messages/RemoveEntityMessage.h"
 #include "caveexpress/shared/network/messages/AddCaveMessage.h"
 #include "caveexpress/shared/network/messages/WaterImpactMessage.h"
@@ -24,6 +23,7 @@
 #include "engine/common/network/messages/FinishedMapMessage.h"
 #include "engine/common/network/messages/FailedMapMessage.h"
 #include "engine/common/network/messages/UpdateParticleMessage.h"
+#include "engine/common/network/INetwork.h"
 
 #include "caveexpress/server/entities/IEntity.h"
 #include "caveexpress/server/entities/Player.h"
@@ -180,12 +180,6 @@ void GameEventHandler::sendLightState (int clientMask, int id, bool state) const
 void GameEventHandler::addCave (int clientMask, int id, bool state) const
 {
 	const AddCaveMessage msg(id, state);
-	_serviceProvider->getNetwork().sendToClients(clientMask, msg);
-}
-
-void GameEventHandler::loadMap (int clientMask, const std::string& mapName, const std::string& title) const
-{
-	const LoadMapMessage msg(mapName, title);
 	_serviceProvider->getNetwork().sendToClients(clientMask, msg);
 }
 

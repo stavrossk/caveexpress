@@ -37,18 +37,30 @@ class OpenURLListener: public UINodeListener {
 protected:
 	const std::string _url;
 	IFrontend *_frontend;
+	bool _newWindow;
 public:
-	OpenURLListener (IFrontend *frontend, const std::string& url) :
-			_url(url), _frontend(frontend)
+	OpenURLListener (IFrontend *frontend, const std::string& url, bool newWindow = true) :
+			_url(url), _frontend(frontend), _newWindow(newWindow)
 	{
 	}
 
 	void onClick ()
 	{
 		_frontend->minimize();
-		System.openURL(_url);
+		System.openURL(_url, _newWindow);
 	}
 };
+
+#ifdef __EMSCRIPTEN__
+	class EmscriptenFullscreenListener: public UINodeListener {
+	public:
+		void onClick () {
+			EM_ASM({
+				Module.requestFullScreen();
+			});
+		}
+	};
+#endif
 
 enum UINodeAlign {
 	// horizontal
@@ -228,6 +240,8 @@ public:
 	void setFocusAlpha (float focusAlpha);
 
 	void addFront (UINode* node);
+	// inserts a node before another node - can be useful for the focus order
+	void addBefore (UINode* reference, UINode* node);
 	virtual void add (UINode* node);
 
 	bool hasImage () const;
@@ -364,7 +378,14 @@ public:
 	virtual bool onKeyRelease (int32_t key);
 	virtual bool onMouseButtonRelease (int32_t x, int32_t y, unsigned char button);
 	virtual bool onMouseButtonPress (int32_t x, int32_t y, unsigned char button);
-
+	virtual bool onGesture (int64_t gestureId, float error, int32_t numFingers);
+	/**
+	 * @param[in] theta the amount that the fingers rotated during this motion
+	 * @param[in] dist the amount that the fingers pinched during this motion
+	 * @param[in] numFingers the number of fingers used in the gesture
+	 */
+	virtual bool onMultiGesture (float theta, float dist, int32_t numFingers);
+	virtual bool onGestureRecord (int64_t gestureId);
 	virtual bool onMouseLeftRelease (int32_t x, int32_t y);
 	virtual bool onMouseMiddleRelease (int32_t x, int32_t y);
 	virtual bool onMouseRightRelease (int32_t x, int32_t y);
@@ -394,7 +415,7 @@ public:
 	void putLeft (UINode *node, float gap = 0.01f);
 
 	bool isVisible () const;
-	void setVisible (bool visible);
+	virtual void setVisible (bool visible);
 	void setAlignment (int align);
 	void setMargin (float top, float left);
 	void setEnabled (bool enable);
@@ -474,13 +495,6 @@ inline void UINode::putRight (UINode *node, float gap)
 inline void UINode::putLeft (UINode *node, float gap)
 {
 	setPos(node->getLeft() - gap - getWidth(), node->getTop());
-}
-
-inline void UINode::setVisible (bool visible)
-{
-	if (!visible)
-		removeFocus();
-	_visible = visible;
 }
 
 inline void UINode::setEnabled (bool enable)

@@ -35,6 +35,8 @@ public:
 	{
 	}
 
+	virtual void init () {}
+
 	void signalHandler (int s) {
 		backtrace("");
 		exit("quitting via signal", s);
@@ -45,6 +47,8 @@ public:
 	virtual std::string getCurrentUser () = 0;
 
 	virtual std::string getLanguage () { return ""; }
+
+	virtual void syncFiles() {}
 
 	// return a slash terminates path to the home directory where the game saves its data to
 	virtual std::string getHomeDirectory () = 0;
@@ -86,11 +90,11 @@ public:
 
 	virtual bool buyItem (const std::string& id) { return false; }
 
-	virtual void achievementUnlocked (const std::string& id) { }
+	virtual void achievementUnlocked (const std::string& id, bool increment) { }
 
 	virtual bool hasAchievement (const std::string& id) { return false; }
 
-	virtual bool track (const std::string& hitType, const std::string& screenName) { return true; }
+	virtual bool track (const std::string& hitType, const std::string& screenName) { logOutput(hitType + " => " + screenName); return true; }
 
 	virtual int getScreenPadding () { return 0; }
 
@@ -102,7 +106,7 @@ public:
 
 	virtual bool isOUYA () const { return false; }
 
-	virtual int openURL (const std::string& url) const { return 0; }
+	virtual int openURL (const std::string& url, bool newWindow) const { return 0; }
 
 	virtual void getPaymentEntries (std::vector<PaymentEntry>& entries) { }
 
@@ -114,17 +118,17 @@ public:
 
 	virtual bool isSmallScreen (IFrontend* frontend) { return frontend->getWidth() <= 1024 || frontend->getHeight() <= 768; }
 
+	virtual bool isFullscreenSupported () { return true; }
+
 	virtual bool canDisableJoystick () { return true; }
+
+	virtual bool supportGooglePlay () { return false; }
 
 	virtual void backtrace (const char *errorMessage) {}
 
 	virtual bool hasTouch () const
 	{
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 		return SDL_GetNumTouchDevices() > 0;
-#else
-		return false;
-#endif
 	}
 
 	/**

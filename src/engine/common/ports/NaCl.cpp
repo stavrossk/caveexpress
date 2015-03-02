@@ -1,5 +1,4 @@
 #include "NaCl.h"
-#include "engine/common/Version.h"
 #include <SDL.h>
 #include "engine/common/Config.h"
 #include "engine/common/ConfigManager.h"
@@ -146,7 +145,7 @@ void NaCl::exit (const std::string& reason, int errorCode)
 	::exit(errorCode);
 }
 
-int NaCl::openURL (const std::string& url) const
+int NaCl::openURL (const std::string& url, bool newWindow) const
 {
 	return -1;
 }

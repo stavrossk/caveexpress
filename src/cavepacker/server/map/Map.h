@@ -18,6 +18,44 @@ class SpriteDef;
 class IFrontend;
 class ServiceProvider;
 
+#define MOVE_LEFT 'l'
+#define MOVE_RIGHT 'r'
+#define MOVE_UP 'u'
+#define MOVE_DOWN 'd'
+
+inline void getXY (char step, int& x, int& y)
+{
+	switch (tolower(step)) {
+	case MOVE_LEFT:
+		x = -1;
+		y = 0;
+		break;
+	case MOVE_RIGHT:
+		x = 1;
+		y = 0;
+		break;
+	case MOVE_UP:
+		x = 0;
+		y = -1;
+		break;
+	case MOVE_DOWN:
+		x = 0;
+		y = 1;
+		break;
+	default:
+		x = 0;
+		y = 0;
+		break;
+	}
+}
+
+inline void getOppositeXY (char step, int& x, int& y)
+{
+	getXY(step, x, y);
+	x *= -1;
+	y *= -1;
+}
+
 class IEntityVisitor {
 public:
 	virtual ~IEntityVisitor ()
@@ -45,6 +83,14 @@ protected:
 	int _width;
 
 	int _restartDue;
+	typedef std::map<int, char> StateMap;
+	typedef StateMap::iterator StateMapIter;
+	typedef StateMap::const_iterator StateMapConstIter;
+	StateMap _state;
+	typedef std::map<int, IEntity*> FieldMap;
+	typedef FieldMap::iterator FieldMapIter;
+	typedef FieldMap::const_iterator FieldMapConstIter;
+	FieldMap _field;
 
 	// the time that passed since this map was started (milliseconds)
 	uint32_t _time;
@@ -55,8 +101,6 @@ protected:
 	PlayerList _players;
 
 	EntityList _entities;
-	// shadow copy of new entities
-	EntityList _entitiesToAdd;
 
 	bool _pause;
 	// sanity check in the world step callbacks
@@ -69,26 +113,56 @@ protected:
 
 	TimeManager _timeManager;
 
-	uint16_t _gamePoints;
+	uint16_t _moves;
+	uint16_t _pushes;
+
+	bool _forcedFinish;
+
+	bool _autoSolve;
+	int32_t _nextSolveStep;
+	std::string _solution;
 
 	bool visitEntity (IEntity *entity) override;
 
 	// do the spawning on the map and add the physic objects
 	bool spawnPlayer (Player* player);
+	bool setField (IEntity *entity, int col, int row);
+	void printMap ();
+	std::string getMapString() const;
+	char getSokobanFieldId (const IEntity *entity) const;
+	void handleAutoSolve (uint32_t deltaTime);
 public:
 	Map ();
 	virtual ~Map ();
 
 	const PlayerList& getPlayers () const;
+	inline int getConnectedPlayers () const { return _playersWaitingForSpawn.size() + _players.size(); }
 	Player* getPlayer (ClientId clientId);
 
+	void rebuildField ();
 	TimeManager& getTimeManager ();
 
+	inline bool isAutoSolve () const { return _autoSolve; }
+	void abortAutoSolve ();
+
+	int getMaxPlayers() const;
+	inline int getMoves() const { return _moves; }
+	inline int getPushes() const { return _pushes; }
+	// return the best known moves from the solution
+	inline int getBestMoves () const { return getSetting("best").toInt(); }
+	void increaseMoves ();
+	void increasePushes ();
+	void undo (Player* player);
+
+	void autoStart ();
 	void loadDelayed (uint32_t delay, const std::string& name);
 	bool load (const std::string& name);
 
 	uint16_t getPoints () const;
 	void addPoints (const IEntity* entity, uint16_t points);
+
+	// move into directions l,r,d,u (sokoban standard)
+	bool movePlayer (Player* player, char step);
 
 	void reload ();
 	bool isFailed () const;
@@ -117,21 +191,22 @@ public:
 	void disconnect (ClientId clientId);
 
 	// checks the winning conditions of the map
-	// e.g. if enough npcs were brought to their target cave, the map is done
 	bool isDone () const;
 
 	bool isRestartInitialized () const;
 
 	// returns the time that was needed to finish the map
 	uint32_t getTime () const;
-	const ThemeType& getTheme () const;
 
-	uint32_t getFinishPoints () const;
+	MapTile* getPackage (int col, int row);
+	bool isFree (int col, int row);
+	bool isTarget (int col, int row);
+	bool isPackage (int col, int row);
+
+	bool undoPackage (int col, int row, int targetCol, int targetRow);
 
 	void resetCurrentMap ();
 
-	// delay add
-	void addEntity (IEntity *entity);
 	// initial add
 	void loadEntity (IEntity *entity);
 
@@ -150,14 +225,11 @@ public:
 	void init (IFrontend *frontend, ServiceProvider& serviceProvider);
 
 	void shutdown ();
+	int solve ();
+	std::string getSolution() const;
 private:
+	void solveMap () { solve(); }
 	void finishMap ();
-
-	// init the map boundaries and configure the box2d stuff
-	void initPhysics ();
-
-	// cleanup on map shutdown
-	void clearPhysics ();
 
 	// command callbacks
 	void triggerRestart ();
@@ -185,13 +257,6 @@ inline int Map::getMapHeight () const
 	return _height;
 }
 
-inline bool Map::isDone () const
-{
-	if (isFailed())
-		return false;
-	return true;
-}
-
 inline IFrontend *Map::getFrontend () const
 {
 	return _frontend;
@@ -212,11 +277,6 @@ inline TimeManager& Map::getTimeManager ()
 inline bool Map::isRestartInitialized () const
 {
 	return _restartDue > 0;
-}
-
-inline uint16_t Map::getPoints () const
-{
-	return _gamePoints;
 }
 
 inline bool Map::isPause () const

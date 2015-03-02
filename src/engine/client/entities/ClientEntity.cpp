@@ -4,6 +4,7 @@
 #include "engine/client/ui/UI.h"
 #include "engine/client/ui/BitmapFont.h"
 #include "engine/common/Shared.h"
+#include "engine/common/Direction.h"
 #include "engine/common/Logger.h"
 #include "engine/common/FileSystem.h"
 #include "engine/common/ConfigManager.h"
@@ -33,7 +34,7 @@ void ClientEntity::onVisibilityChanged ()
 {
 }
 
-void ClientEntity::render (IFrontend *frontend, Layer layer, int scale, int offsetX, int offsetY) const
+void ClientEntity::render (IFrontend *frontend, Layer layer, int scale, float zoom, int offsetX, int offsetY) const
 {
 	if (!_currSprite)
 		return;
@@ -43,76 +44,84 @@ void ClientEntity::render (IFrontend *frontend, Layer layer, int scale, int offs
 		return;
 
 	const ClientEntityPtr ropeEntity = _ropeEntity;
-	const int basePosX = offsetX + _pos.x * scale;
-	const int basePosY = offsetY + _pos.y * scale;
+	const int basePosX = _pos.x * scale * zoom;
+	const int basePosY = _pos.y * scale * zoom;
 	int posX = basePosX;
 	int posY = basePosY;
 
 	switch (_align) {
+	case ENTITY_ALIGN_UPPER_LEFT:
+		break;
 	case ENTITY_ALIGN_LOWER_LEFT:
-		posX -= texture->getWidth() / 2;
-		posY += _size.y * scale / 2.0f;
-		posY -= texture->getHeight();
+		posX -= texture->getWidth() * zoom / 2.0f;
+		posY += _size.y * scale * zoom / 2.0f;
+		posY -= texture->getHeight() * zoom;
 		break;
 	case ENTITY_ALIGN_MIDDLE_CENTER: {
-		posX -= texture->getWidth() / 2;
-		posY -= texture->getHeight() / 2;
+		posX -= texture->getWidth() * zoom / 2.0f;
+		posY -= texture->getHeight() * zoom / 2.0f;
 		break;
 	}
 	}
 
-	setScreenPos(posX, posY);
+	setScreenPos(offsetX + posX, offsetY + posY);
 
 	const int ropeX1 = basePosX;
-	const int ropeY1 = basePosY - _size.y * scale / 2.0f;
+	const int ropeY1 = (basePosY - _size.y * scale * zoom / 2.0f);
 	int ropeX2 = 0;
 	int ropeY2 = 0;
 	if (ropeEntity && layer == LAYER_MIDDLE) {
 		const vec2& pos = ropeEntity->getPos();
 		const vec2& size = ropeEntity->getSize();
-		ropeX2 = offsetX + pos.x * scale;
-		ropeY2 = offsetY + pos.y * scale + size.y * scale / 2.0f;
-		const Color color = { 0.5f, 0.3f, 0.3f, 1.0f };
-		frontend->renderLine(ropeX1, ropeY1, ropeX2, ropeY2, color);
+		ropeX2 = pos.x * scale * zoom;
+		ropeY2 = pos.y * scale * zoom + size.y * scale * zoom / 2.0f;
+		static const Color color = { 0.5f, 0.3f, 0.3f, 1.0f };
+		frontend->renderLine(offsetX + ropeX1, offsetY + ropeY1, offsetX + ropeX2, offsetY + ropeY2, color);
 	}
 
-	const bool visible = _currSprite->render(frontend, layer, posX, posY, _angle, _alpha);
+	const bool visible = _currSprite->render(frontend, layer, _screenPosX, _screenPosY, zoom, _angle, _alpha);
 	_visChanged = visible != _visible;
+
+	if (Config.isDebug()) {
+		frontend->renderFilledRect(_screenPosX, _screenPosY, 4, 4, colorRed);
+	}
 
 	int offsetPosX = posX;
 	int offsetPosY = posY;
 	switch (_align) {
+	case ENTITY_ALIGN_UPPER_LEFT:
+		break;
 	case ENTITY_ALIGN_LOWER_LEFT:
-		offsetPosX += _size.x * scale;
+		offsetPosX += _size.x * scale * zoom;
 		break;
 	case ENTITY_ALIGN_MIDDLE_CENTER:
-		offsetPosX += _size.x / 2.0f * scale;
-		offsetPosY -= _size.y / 2.0f * scale;
+		offsetPosX += _size.x / 2.0f * scale * zoom;
+		offsetPosY -= _size.y / 2.0f * scale * zoom;
 		break;
 	}
 	for (EntityOverlaysConstIter i = _entityOverlays.begin(); i != _entityOverlays.end(); ++i) {
 		const SpritePtr& overlay = *i;
-		overlay->render(frontend, layer, _align, offsetPosX, offsetPosY, _angle, _alpha);
+		overlay->render(frontend, layer, _align, offsetX + offsetPosX, offsetY + offsetPosY, zoom, _angle, _alpha);
 	}
 
 	const bool debug = Config.getConfigVar("debugentity")->getBoolValue();
 	if (debug) {
 		const BitmapFontPtr& font = UI::get().getFont();
 
-		renderDot(frontend, basePosX, basePosY, colorGreen);
-		renderDot(frontend, posX, posY, colorWhite);
+		renderDot(frontend, offsetX + basePosX, offsetY + basePosY, colorGreen);
+		renderDot(frontend, offsetX + posX, offsetY + posY, colorWhite);
 		if (ropeEntity && layer == LAYER_MIDDLE) {
-			renderDot(frontend, ropeX1, ropeY1, colorBlue);
-			renderDot(frontend, ropeX2, ropeY2, colorBrightBlue);
+			renderDot(frontend, offsetX + ropeX1, offsetY + ropeY1, colorBlue);
+			renderDot(frontend, offsetX + ropeX2, offsetY + ropeY2, colorBrightBlue);
 		}
-		renderDot(frontend, offsetPosX, offsetPosY, colorGray);
+		renderDot(frontend, offsetX + offsetPosX, offsetY + offsetPosY, colorGray);
 
-		int fontY = posY;
+		int fontY = _screenPosY;
 		if (!_animation->isNone()) {
-			font->print(_animation->name, colorWhite, posX, fontY);
+			font->print(_animation->name, colorWhite, _screenPosX, fontY);
 			fontY += font->getTextHeight(_animation->name);
 		}
-		font->print(string::toString(_angle), colorWhite, posX, fontY);
+		font->print(string::toString(_angle), colorWhite, _screenPosX, fontY);
 	}
 }
 
@@ -155,8 +164,13 @@ bool ClientEntity::update (uint32_t deltaTime, bool lerpPos)
 	static const float interval = Constant::FPS_SERVER / (float) Constant::FPS_CLIENT;
 	_time += deltaTime;
 	if (lerpPos) {
-		const vec2 inc = interval * (_nextPos - _prevPos);
-		_pos += inc;
+		const vec2 before = _pos - _nextPos;
+		if (!before.isZero(0.01f)) {
+			const vec2 inc = interval * (_nextPos - _prevPos);
+			_pos += inc;
+		} else {
+			_pos = _nextPos;
+		}
 	}
 	if (_currSprite) {
 		_currSprite->update(deltaTime);
@@ -183,11 +197,15 @@ bool ClientEntity::update (uint32_t deltaTime, bool lerpPos)
 	return true;
 }
 
-void ClientEntity::setPos (const vec2& pos)
+void ClientEntity::setPos (const vec2& pos, bool lerp)
 {
-	_prevPos = _nextPos;
-	_nextPos = pos;
-	_pos = _prevPos;
+	if (lerp) {
+		_prevPos = _nextPos;
+		_nextPos = pos;
+		_pos = _prevPos;
+	} else {
+		_prevPos = _nextPos = _pos = pos;
+	}
 }
 
 Direction ClientEntity::getMoveDirection ()

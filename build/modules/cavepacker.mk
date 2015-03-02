@@ -1,15 +1,9 @@
 TARGET             := cavepacker
 
-# if the linking should be static
-$(TARGET)_STATIC   ?= $(STATIC)
-ifeq ($($(TARGET)_STATIC),1)
-$(TARGET)_LDFLAGS  += -static
-endif
-
 $(TARGET)_LINKER   := $(CXX)
 $(TARGET)_FILE     := $(TARGET)$(EXE_EXT)
-$(TARGET)_LDFLAGS  += $(SDL_LIBS) $(SDL_IMAGE_LIBS) $(SDL_MIXER_LIBS) $(OPENGL_LIBS) $(OGG_LIBS) $(VORBIS_LIBS) $(PNG_LIBS) -lz $(SO_LIBS) $(LUA_LIBS) $(SQLITE3_LIBS) $(SDL_NET_LIBS) $(SDL_RWHTTP_LIBS)
-$(TARGET)_CFLAGS   += $(SDL_CFLAGS) $(SDL_IMAGE_CFLAGS) $(SDL_MIXER_CFLAGS) $(OPENGL_CFLAGS) $(OGG_CFLAGS) $(VORBIS_CFLAGS) $(LUA_CFLAGS) $(PNG_CFLAGS) $(SQLITE3_CFLAGS) $(SDL_NET_CFLAGS) $(SDL_RWHTTP_CFLAGS) -DNONETWORK
+$(TARGET)_LDFLAGS  += $(SDL_LIBS) $(SDL_IMAGE_LIBS) $(SDL_MIXER_LIBS) $(ZLIB_LIBS) $(OPENGL_LIBS) $(OGG_LIBS) $(VORBIS_LIBS) $(PNG_LIBS) $(SO_LIBS) $(LUA_LIBS) $(SQLITE3_LIBS) $(SDL_NET_LIBS) $(SDL_RWHTTP_LIBS) $(NCURSES_LIBS)
+$(TARGET)_CFLAGS   += -I$(SRCDIR)/$(TARGET) $(SDL_CFLAGS) $(SDL_IMAGE_CFLAGS) $(SDL_MIXER_CFLAGS) $(ZLIB_CFLAGS) $(OPENGL_CFLAGS) $(OGG_CFLAGS) $(VORBIS_CFLAGS) $(LUA_CFLAGS) $(PNG_CFLAGS) $(SQLITE3_CFLAGS) $(SDL_NET_CFLAGS) $(SDL_RWHTTP_CFLAGS) $(NCURSES_CFLAGS)
 $(TARGET)_SRCS      = $(subst $(SRCDIR)/,, \
 	$(wildcard $(SRCDIR)/*.cpp) \
 	\
@@ -24,15 +18,17 @@ $(TARGET)_SRCS      = $(subst $(SRCDIR)/,, \
 	$(wildcard $(SRCDIR)/engine/client/ui/*.cpp) \
 	$(wildcard $(SRCDIR)/engine/client/ui/nodes/*.cpp) \
 	$(wildcard $(SRCDIR)/engine/client/ui/windows/*.cpp) \
+	$(wildcard $(SRCDIR)/engine/client/ui/windows/intro/*.cpp) \
 	$(wildcard $(SRCDIR)/engine/client/ui/layouts/*.cpp) \
 	$(wildcard $(SRCDIR)/engine/*.cpp) \
 	$(wildcard $(SRCDIR)/engine/common/*.cpp) \
 	$(wildcard $(SRCDIR)/engine/common/campaign/*.cpp) \
-	$(wildcard $(SRCDIR)/engine/common/network/INetwork.cpp) \
-	$(wildcard $(SRCDIR)/engine/common/network/NoNetwork.cpp) \
+	$(wildcard $(SRCDIR)/engine/common/campaign/persister/*.cpp) \
+	$(wildcard $(SRCDIR)/engine/common/network/*.cpp) \
 	$(wildcard $(SRCDIR)/engine/server/*.cpp) \	\
 	\
 	$(wildcard $(SRCDIR)/cavepacker/client/ui/windows/*.cpp) \
+	$(wildcard $(SRCDIR)/cavepacker/client/ui/windows/intro/*.cpp) \
 	$(wildcard $(SRCDIR)/cavepacker/client/ui/nodes/*.cpp) \
 	\
 	$(wildcard $(SRCDIR)/cavepacker/client/*.cpp) \
@@ -42,6 +38,7 @@ $(TARGET)_SRCS      = $(subst $(SRCDIR)/,, \
 	$(wildcard $(SRCDIR)/cavepacker/server/map/*.cpp) \
 	\
 	$(wildcard $(SRCDIR)/cavepacker/shared/*.cpp) \
+	$(wildcard $(SRCDIR)/cavepacker/shared/network/*.cpp) \
 	\
 	$(wildcard $(SRCDIR)/cavepacker/*.cpp) \
 	) \
@@ -50,13 +47,15 @@ $(TARGET)_SRCS      = $(subst $(SRCDIR)/,, \
 	\
 	$(LUA_SRCS) \
 	\
+	$(ZLIB_SRCS) \
+	\
 	$(SDL_SRCS) \
 	\
 	$(SDL_IMAGE_SRCS) \
 	\
 	$(SDL_MIXER_SRCS)
 
-ifneq ($(findstring $(TARGET_OS), mingw32 mingw64 mingw64_64),)
+ifneq ($(findstring $(TARGET_OS), mingw32 mingw64),)
 	$(TARGET)_SRCS +=\
 		$(SDL_NET_SRCS) \
 		engine/common/ports/Windows.cpp \
@@ -78,6 +77,13 @@ ifeq ($(TARGET_OS),nacl)
 	$(TARGET)_LDFLAGS +=
 endif
 
+ifneq ($(findstring $(TARGET_OS), html5),)
+	$(TARGET)_SRCS +=\
+		engine/common/ports/Unix.cpp \
+		engine/common/ports/HTML5.cpp
+	$(TARGET)_LDFLAGS +=
+endif
+
 ifeq ($(TARGET_OS),darwin)
 	$(TARGET)_SRCS +=\
 		$(SDL_NET_SRCS) \
@@ -85,6 +91,11 @@ ifeq ($(TARGET_OS),darwin)
 		engine/common/ports/Darwin.cpp \
 		engine/common/ports/CocoaLog.mm \
 	$(TARGET)_LDFLAGS +=
+endif
+
+ifneq ($(NETWORKING),1)
+	TMP := $(filter-out engine/common/network/Network.cpp,$($(TARGET)_SRCS))
+	$(TARGET)_SRCS = $(TMP)
 endif
 
 ifneq ($(APPNAME),$(TARGET))

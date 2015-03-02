@@ -7,7 +7,7 @@
 #include <iostream>
 #include <Box2D/Common/b2Math.h>
 #include <SDL.h>
-#include <yajl/yajl_parse.h>
+#include <yajl_parse.h>
 #include "engine/common/Common.h"
 #include "engine/common/File.h"
 
@@ -80,7 +80,7 @@ static int convert_number (void * ctx, const char * numberVal, size_t numberLen)
 				std::cout << std::endl << VERTICESINDENT;
 			}
 		}
-		const float origin = ++coordinatesParsed % 2 ? originX : originY;
+		const float origin = (++coordinatesParsed % 2) ? originX : originY;
 		const float f = (atof(str.c_str()) - origin) * scale;
 		vertices++;
 		if (vertices != 1) {
@@ -223,8 +223,8 @@ static void usage ()
 
 extern "C" int main (int argc, char* argv[])
 {
-	const URI uri("file://./contrib/box2deditor/caveexpress.json");
-	File file(uri, SDL_RWFromFile(uri.getPath().c_str(), "rb"), "./contrib/box2deditor/caveexpress.json");
+	const std::string path = "contrib/box2deditor/caveexpress.json";
+	File file(SDL_RWFromFile(path.c_str(), "rb"), path);
 	char *buffer;
 	const int fileLen = file.read((void **) &buffer);
 	const ScopedArrayPtr<char> p(buffer);

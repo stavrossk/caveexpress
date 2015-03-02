@@ -5,17 +5,17 @@
 #include "engine/common/Commands.h"
 #include "engine/common/FileSystem.h"
 
-UINodeMapSelector::UINodeMapSelector (IFrontend *frontend, const IMapManager &mapManager, int cols, int rows) :
-		UINodeBackgroundSelector<std::string>(frontend, cols, rows), _campaignManager(nullptr), _mapManager(&mapManager)
+UINodeMapSelector::UINodeMapSelector (IFrontend *frontend, const IMapManager &mapManager, bool multiplayer, int cols, int rows) :
+		UINodeBackgroundSelector<std::string>(frontend, cols, rows), _campaignManager(nullptr), _mapManager(&mapManager), _multiplayer(multiplayer)
 {
 	setColsRowsFromTexture("map-icon-locked");
 	defaults();
 	reset();
 }
 
-UINodeMapSelector::UINodeMapSelector (IFrontend *frontend, CampaignManager &campaignManager, int cols, int rows) :
+UINodeMapSelector::UINodeMapSelector (IFrontend *frontend, CampaignManager &campaignManager, bool multiplayer, int cols, int rows) :
 		UINodeBackgroundSelector<std::string>(frontend, cols, rows), _campaignManager(&campaignManager), _mapManager(
-				nullptr)
+				nullptr), _multiplayer(multiplayer)
 {
 	setColsRowsFromTexture("map-icon-locked");
 	defaults();
@@ -106,7 +106,9 @@ TexturePtr UINodeMapSelector::getIcon (const std::string& data) const
 			if (map->isLocked())
 				return loadTexture("map-icon-locked");
 
-			return loadTexture("map-icon-unlocked-" + string::toString(static_cast<int>(map->getStars())));
+			const TexturePtr& ptr = loadTexture("map-icon-unlocked-" + string::toString(static_cast<int>(map->getStars())));
+			if (ptr)
+				return ptr;
 		}
 	}
 	return loadTexture("map-icon-unlocked");
@@ -118,7 +120,8 @@ void UINodeMapSelector::reset ()
 	if (_mapManager) {
 		const IMapManager::Maps &maps = _mapManager->getMaps();
 		for (IMapManager::Maps::const_iterator i = maps.begin(); i != maps.end(); ++i) {
-			addData(i->first);
+			if (!_multiplayer || i->second->getStartPositions() > 1)
+				addData(i->first);
 		}
 		return;
 	}
@@ -127,7 +130,14 @@ void UINodeMapSelector::reset ()
 	if (!campaignPtr)
 		return;
 	const Campaign::MapList& maps = campaignPtr->getMaps();
-	for (Campaign::MapListConstIter i = maps.begin(); i != maps.end(); ++i) {
-		addData((*i)->getId());
+	int index = -1;
+	int mapIndex = 0;
+	for (Campaign::MapListConstIter i = maps.begin(); i != maps.end(); ++i, ++mapIndex) {
+		const CampaignMapPtr& p = *i;
+		addData(p->getId());
+		if (index == -1 && p->isLocked()) {
+			index = mapIndex - 1;
+		}
 	}
+	selectEntry(index);
 }

@@ -1,10 +1,5 @@
-ifeq ($(STATIC),1)
-PKG_CONFIG_LIBS_FLAGS := --static --libs
-PKG_CONFIG_CFLAGS_FLAGS := --static --cflags
-else
 PKG_CONFIG_LIBS_FLAGS := --libs
 PKG_CONFIG_CFLAGS_FLAGS := --cflags
-endif
 
 # get only the variables with plain names
 MAKE_ENV := $(shell echo '$(.VARIABLES)' | awk -v RS=' ' '/^[a-zA-Z0-9_]+$$/')
@@ -12,11 +7,11 @@ SHELL_EXPORT := $(foreach v,$(MAKE_ENV),$(v)='$($(v))')
 
 #TODO the manually added linker flag is more a hack than a solution
 define PKG_LIBS
-$(shell $(SHELL_EXPORT) $(PKG_CONFIG) $(PKG_CONFIG_LIBS_FLAGS) $(1) 2> /dev/null || ( if [ -z "$(2)" ]; then echo "-l$(1)"; else echo "-l$(2)"; fi ))
+$(shell $(SHELL_EXPORT) $(PKG_CONFIG) $(PKG_CONFIG_LIBS_FLAGS) $(1) --silence-errors || ( if [ -z "$(2)" ]; then echo "-l$(1)"; else echo "-l$(2)"; fi ))
 endef
 
 define PKG_CFLAGS
-$(shell $(SHELL_EXPORT) $(PKG_CONFIG) $(PKG_CONFIG_CFLAGS_FLAGS) $(1) 2> /dev/null)
+$(shell $(SHELL_EXPORT) $(PKG_CONFIG) $(PKG_CONFIG_CFLAGS_FLAGS) $(1) --silence-errors)
 endef
 
 define CMD_FIND

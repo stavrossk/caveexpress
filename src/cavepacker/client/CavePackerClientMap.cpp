@@ -1,4 +1,6 @@
 #include "cavepacker/client/CavePackerClientMap.h"
+#include "cavepacker/shared/EntityStates.h"
+#include "cavepacker/shared/network/messages/ProtocolMessages.h"
 #include "engine/client/particles/Sparkle.h"
 #include "engine/common/MapSettings.h"
 #include "engine/common/network/messages/StopMovementMessage.h"
@@ -16,6 +18,8 @@
 #include "engine/common/GLShared.h"
 #include "engine/common/ExecutionTime.h"
 #include "engine/common/DateUtil.h"
+#include "cavepacker/shared/CavePackerAnimation.h"
+#include "cavepacker/shared/CavePackerEntityType.h"
 #include <SDL.h>
 
 CavePackerClientMap::CavePackerClientMap (int x, int y, int width, int height, IFrontend *frontend,
@@ -26,32 +30,25 @@ CavePackerClientMap::CavePackerClientMap (int x, int y, int width, int height, I
 
 void CavePackerClientMap::start ()
 {
+	ClientMap::start();
 }
 
-void CavePackerClientMap::render (int x, int y) const
+void CavePackerClientMap::undo ()
 {
-	ExecutionTime renderTime("ClientMapRender", 2000L);
-	const int baseX = x + _x + _camera.getViewportX();
-	const int baseY = y + _y + _camera.getViewportY();
-	int layerX = baseX;
-	int layerY = baseY;
-	getLayerOffset(layerX, layerY);
+	_serviceProvider.getNetwork().sendToServer(UndoMessage());
+}
 
-	_frontend->enableScissor(layerX, layerY,
-			std::min(getWidth() - layerX, _mapWidth * _scale),
-			std::min(getHeight() - layerY, _mapHeight * _scale));
-	renderLayer(layerX, layerY, LAYER_BACK);
-	renderLayer(layerX, layerY, LAYER_MIDDLE);
-	renderLayer(layerX, layerY, LAYER_FRONT);
-
-	if (_restartDue != 0) {
-		renderFadeOutOverlay(x, y);
+void CavePackerClientMap::update (uint32_t deltaTime)
+{
+	ClientMap::update(deltaTime);
+	for (ClientEntityMapIter i = _entities.begin(); i != _entities.end(); ++i) {
+		if (i->second->getType() != EntityTypes::PACKAGE)
+			continue;
+		const bool delivered = i->second->getState() == CavePackerEntityStates::DELIVERED;
+		if (delivered) {
+			i->second->setAnimationType(Animations::DELIVERED);
+		} else {
+			i->second->setAnimationType(Animation::NONE);
+		}
 	}
-
-	Config.setDebugRendererData(layerX, layerY, getWidth(), getHeight(), _scale);
-	Config.getDebugRenderer().render();
-
-	_particleSystem.render(_frontend, layerX, layerY);
-
-	_frontend->disableScissor();
 }

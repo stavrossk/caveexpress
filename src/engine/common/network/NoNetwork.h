@@ -7,8 +7,11 @@ private:
 	bool _connected;
 	bool _server;
 
-	std::vector<ByteStream> _serverQueue;
-	std::vector<ByteStream> _clientQueue;
+	typedef std::vector<ByteStream> Queue;
+	typedef Queue::const_iterator QueueConstIter;
+	typedef Queue::iterator QueueIter;
+	Queue _serverQueue;
+	Queue _clientQueue;
 
 	inline void enqueueServer (const ByteStream& s)
 	{
@@ -30,6 +33,7 @@ public:
 	{
 	}
 
+	void init () override;
 	void update (uint32_t deltaTime) override;
 	bool openServer (int port, IServerCallback* func) override;
 	int sendToClients (int clientMask, const IProtocolMessage& msg) override;

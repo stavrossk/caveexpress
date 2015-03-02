@@ -7,6 +7,7 @@
 #include "engine/common/Logger.h"
 #include "engine/common/ServiceProvider.h"
 #include "engine/common/SpriteDefinition.h"
+#include "engine/common/network/messages/LoadMapMessage.h"
 #include "engine/common/IFrontend.h"
 #include "engine/common/network/INetwork.h"
 #include "engine/common/IMapContext.h"
@@ -29,10 +30,11 @@
 #include "caveexpress/server/entities/npcs/NPCAttacking.h"
 #include "caveexpress/shared/CaveExpressSoundType.h"
 #include "caveexpress/shared/CaveExpressMapFailedReasons.h"
-#include "caveexpress/shared/network/messages/UpdatePointsMessage.h"
-#include "caveexpress/shared/network/messages/UpdatePackageCountMessage.h"
+#include "engine/common/network/messages/UpdatePointsMessage.h"
+#include "engine/common/network/messages/UpdatePackageCountMessage.h"
 #include "caveexpress/shared/network/messages/ProtocolMessages.h"
 #include "caveexpress/shared/CaveExpressSpriteType.h"
+#include "caveexpress/shared/CaveExpressAchievement.h"
 #include "engine/common/network/messages/InitDoneMessage.h"
 #include "engine/common/network/messages/SoundMessage.h"
 #include "engine/common/network/messages/MapSettingsMessage.h"
@@ -43,7 +45,9 @@
 #include "engine/common/vec2.h"
 #include "engine/common/ExecutionTime.h"
 #include "engine/common/Commands.h"
+#include <Box2D/Common/b2Settings.h>
 #include <SDL.h>
+#include <SDL_stdinc.h>
 #include <algorithm>
 #include <functional>
 #include <cassert>
@@ -56,15 +60,26 @@ typedef ShapeMap::iterator ShapeIter;
 #define SPAWN_FLYING_NPC_DELAY 5000
 #define SPAWN_FISH_NPC_DELAY 5000
 
+
+namespace {
+Achievement* packageAchievements[] = {
+		&Achievements::DELIVER_A_PACKAGE,
+		&Achievements::DELIVER_10_PACKAGES,
+		&Achievements::DELIVER_50_PACKAGES,
+		&Achievements::DELIVER_100_PACKAGES,
+		&Achievements::DELIVER_150_PACKAGES
+};
+}
+
 Map::Map () :
 		IMap(), _world(nullptr), _frontend(nullptr), _serviceProvider(nullptr), _theme(&ThemeTypes::ROCK)
 {
-	Commands.registerCommand(CMD_MAP_PAUSE, bind(Map, triggerPause));
-	Commands.registerCommand(CMD_MAP_RESTART, bind(Map, triggerRestart));
-	Commands.registerCommand(CMD_MAP_DEBUG, bind(Map, triggerDebug));
-	Commands.registerCommand(CMD_START, bind(Map, startMap));
-	Commands.registerCommand(CMD_KILL, bind(Map, killPlayers));
-	Commands.registerCommand(CMD_FINISHMAP, bind(Map, finishMap));
+	Commands.registerCommand(CMD_MAP_PAUSE, bindFunction(Map, triggerPause));
+	Commands.registerCommand(CMD_MAP_RESTART, bindFunction(Map, triggerRestart));
+	Commands.registerCommand(CMD_MAP_DEBUG, bindFunction(Map, triggerDebug));
+	Commands.registerCommand(CMD_START, bindFunction(Map, startMap));
+	Commands.registerCommand(CMD_KILL, bindFunction(Map, killPlayers));
+	Commands.registerCommand(CMD_FINISHMAP, bindFunction(Map, finishMap));
 
 	resetCurrentMap();
 }
@@ -203,6 +218,10 @@ inline bool Map::isActive () const
 
 void Map::countTransferedPackage ()
 {
+	const int n = SDL_arraysize(packageAchievements);
+	for (int i = 0; i < n; ++i) {
+		packageAchievements[i]->unlock();
+	}
 	_transferedPackages++;
 	info(LOG_SERVER, String::format("collected %i of %i packages", _transferedPackages, _transferedPackageLimit));
 	const UpdatePackageCountMessage msg(getPackageCount());
@@ -368,7 +387,7 @@ void Map::restart (uint32_t delay)
 		return;
 
 	info(LOG_MAP, "trigger map restart");
-	_restartDue = SDL_GetTicks() + delay;
+	_restartDue = _time + delay;
 	GameEvent.restartMap(delay);
 }
 
@@ -393,6 +412,7 @@ void Map::resetCurrentMap ()
 	_spawnFlyingNPCTime = 0;
 	_activateflyingNPC = false;
 	_spawnFishNPCTime = 0;
+	_initialGeyserDelay = 0;
 	_activateFishNPC = false;
 	_mapRunning = false;
 	_wind = 0.0f;
@@ -413,19 +433,24 @@ void Map::resetCurrentMap ()
 	_name.clear();
 }
 
+inline const ThemeType& getTheme (const std::string& name)
+{
+	const std::size_t themeSep = name.find("-");
+	if (themeSep == std::string::npos)
+		return ThemeTypes::ROCK;
+	const ThemeType& t = ThemeType::getByName(name.substr(themeSep + 1, name.size() - (themeSep + 1)));
+	if (!t.isNone())
+		return t;
+	return ThemeTypes::ROCK;
+}
+
 inline IMapContext* getMapContext (const std::string& name)
 {
 	const std::string randomMapBase = "random";
 	if (name.compare(0, randomMapBase.size(), randomMapBase) == 0) {
-		const std::size_t themeSep = name.find("-");
-		const ThemeType* theme = &ThemeTypes::ROCK;
-		if (themeSep != std::string::npos) {
-			const ThemeType& t = ThemeType::getByName(name.substr(themeSep + 1, name.size() - (themeSep + 1)));
-			if (!t.isNone())
-				theme = &t;
-		}
-		info(LOG_MAP, "use theme " + theme->name);
-		RandomMapContext *ctx = new RandomMapContext(name, *theme, 8, 18, 20, 14);
+		const ThemeType& theme = getTheme(name);
+		info(LOG_MAP, "use theme " + theme.name);
+		RandomMapContext *ctx = new RandomMapContext(name, theme, 8, 18, 20, 14);
 		return ctx;
 	}
 	return new LUAMapContext(name);
@@ -450,6 +475,7 @@ bool Map::load (const std::string& name)
 	}
 	ctx->save();
 	_settings = ctx->getSettings();
+	_startPositions = ctx->getStartPositions();
 	_name = ctx->getName();
 	_title = ctx->getTitle();
 	_theme = &ctx->getTheme();
@@ -480,6 +506,7 @@ bool Map::load (const std::string& name)
 
 	_spawnFlyingNPCTime = getSetting(msn::NPC_INITIAL_SPAWN_TIME, string::toString(4000 + rand() % SPAWN_FLYING_NPC_DELAY)).toInt();
 	_spawnFishNPCTime = getSetting(msn::NPC_INITIAL_SPAWN_TIME, string::toString(4000 + rand() % SPAWN_FISH_NPC_DELAY)).toInt();
+	_initialGeyserDelay = getSetting(msn::GEYSER_INITIAL_DELAY_TIME, string::toString(3000)).toInt();
 
 	if (_transferedPackageLimit <= 0) {
 		error(LOG_MAP, "there is nothing to do in this map - set the npc or package limits");
@@ -562,7 +589,8 @@ bool Map::load (const std::string& name)
 	ctx->onMapLoaded();
 
 	_frontend->onMapLoaded();
-	GameEvent.loadMap(0, _name, _title);
+	const LoadMapMessage msg(_name, _title);
+	_serviceProvider->getNetwork().sendToClients(0, msg);
 
 	_mapRunning = true;
 	return true;
@@ -661,8 +689,13 @@ bool Map::spawnPlayer (Player* player)
 	assert(_entityRemovalAllowed);
 
 	info(LOG_SERVER, "spawn player " + player->toString());
-	const float playerStartX = getSetting(msn::PLAYER_X, msd::PLAYER_X).toFloat();
-	const float playerStartY = getSetting(msn::PLAYER_Y, msd::PLAYER_Y).toFloat();
+	const int startPosIdx = _players.size();
+	float playerStartX, playerStartY;
+	if (!getStartPosition(startPosIdx, playerStartX, playerStartY)) {
+		error(LOG_SERVER, String::format("no player position for index %i", startPosIdx));
+		return false;
+	}
+
 	const b2Vec2& size = player->getSize();
 	const b2Vec2 pos(playerStartX + size.x / 2.0f, playerStartY + size.y / 2.0f);
 	player->createBody(pos);
@@ -674,7 +707,7 @@ bool Map::spawnPlayer (Player* player)
 void Map::sendMessage (ClientId clientId, const std::string& message) const
 {
 	INetwork& network = _serviceProvider->getNetwork();
-	network.sendToAllClients(TextMessage(message));
+	network.sendToClient(clientId, TextMessage(message));
 }
 
 bool Map::isReadyToStart () const
@@ -684,6 +717,7 @@ bool Map::isReadyToStart () const
 
 void Map::startMap ()
 {
+	info(LOG_SERVER, "start the map and spawn pending players");
 	for (PlayerListIter i = _playersWaitingForSpawn.begin(); i != _playersWaitingForSpawn.end(); ++i) {
 		spawnPlayer(*i);
 	}
@@ -708,7 +742,7 @@ bool Map::initPlayer (Player* player)
 	const ClientId clientId = player->getClientId();
 	info(LOG_SERVER, "init player " + player->toString());
 	const int clientMask = ClientIdToClientMask(clientId);
-	const MapSettingsMessage mapSettingsMsg(_settings);
+	const MapSettingsMessage mapSettingsMsg(_settings, _startPositions.size());
 	network.sendToClient(clientId, mapSettingsMsg);
 	GameEvent.sendWaterUpdate(clientMask, *_water);
 
@@ -725,13 +759,13 @@ bool Map::initPlayer (Player* player)
 		updateVisMask();
 		return spawned;
 	}
+	info(LOG_SERVER, "delay spawn of player");
 	_playersWaitingForSpawn.push_back(player);
 	return true;
 }
 
 void Map::printPlayersList () const
 {
-	std::vector<std::string> names;
 	for (PlayerListConstIter i = _playersWaitingForSpawn.begin(); i != _playersWaitingForSpawn.end(); ++i) {
 		const std::string& name = (*i)->getName();
 		info(LOG_SERVER, "* " + name + " (waiting)");
@@ -745,6 +779,10 @@ void Map::printPlayersList () const
 void Map::sendPlayersList () const
 {
 	std::vector<std::string> names;
+	for (PlayerListConstIter i = _players.begin(); i != _players.end(); ++i) {
+		const std::string& name = (*i)->getName();
+		names.push_back(name);
+	}
 	for (PlayerListConstIter i = _playersWaitingForSpawn.begin(); i != _playersWaitingForSpawn.end(); ++i) {
 		const std::string& name = (*i)->getName();
 		names.push_back(name);
@@ -995,7 +1033,7 @@ MapTile* Map::createMapTileWithoutBody (const SpriteDefPtr& spriteDef, gridCoord
 	} else if (SpriteTypes::isPackageTarget(type)) {
 		mapTile = new PackageTarget(*this, spriteDef->id, gridX, gridY);
 	} else if (SpriteTypes::isGeyser(type)) {
-		mapTile = new Geyser(*this, spriteDef->id, gridX, gridY);
+		mapTile = new Geyser(*this, spriteDef->id, gridX, gridY, _initialGeyserDelay);
 	} else if (SpriteTypes::isAnyGround(type) || SpriteTypes::isBridge(type)) {
 		mapTile = new MapTile(*this, spriteDef->id, gridX, gridY, EntityTypes::GROUND);
 	} else if (SpriteTypes::isSolid(type)) {
@@ -1431,7 +1469,7 @@ void Map::update (uint32_t deltaTime)
 
 	_timeManager.update(deltaTime);
 
-	if (_restartDue > 0 && _restartDue <= SDL_GetTicks()) {
+	if (_restartDue > 0 && _restartDue <= _time) {
 		const std::string currentName = getName();
 		info(LOG_MAP, "restarting map " + currentName);
 		if (isFailed()) {
@@ -1440,7 +1478,7 @@ void Map::update (uint32_t deltaTime)
 				const Player* p = *i;
 				GameEvent.failedMap(p->getClientId(), currentName, getFailReason(p), getTheme());
 			}
-			System.track("MapState", "failed:" + currentName);
+			System.track("mapstate", "failed:" + currentName);
 		} else {
 			load(currentName);
 		}

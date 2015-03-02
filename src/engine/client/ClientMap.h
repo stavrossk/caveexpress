@@ -7,6 +7,7 @@
 #include "engine/common/Animation.h"
 #include "engine/common/IEventObserver.h"
 #include "engine/common/IMap.h"
+#include "engine/common/ConfigVar.h"
 #include "engine/common/ThemeType.h"
 #include "engine/common/TimeManager.h"
 #include "engine/common/network/INetwork.h"
@@ -30,7 +31,9 @@ protected:
 	int _y;
 	int _width;
 	int _height;
+	// the reference tile width to convert the grid sizes into pixels
 	int _scale;
+	float _zoom;
 
 	// all the maptiles and other entities (e.g. stones) in this map
 	ClientEntityMap _entities;
@@ -64,31 +67,45 @@ protected:
 
 	ParticleSystem _particleSystem;
 
+	// true if this is a tutorial map - might print extra information on player actions
 	bool _tutorial;
+	// the window id that should get pushed to the stack whenever the map is started
 	std::string _introWindow;
 	bool _started;
 	const ThemeType* _theme;
 
+	ConfigVarPtr _minZoom;
+	ConfigVarPtr _maxZoom;
+
+	// how many different start positions are available in this particular map
+	int _startPositions;
+
 	void renderLayer (int x, int y, Layer layer) const;
-	void renderFadeOutOverlay (int x, int y) const;
-	void getLayerOffset (int &x, int &y) const;
+	void renderFadeOutOverlay () const;
 	virtual void couldNotFindEntity (const std::string& prefix, uint16_t id) const;
 	void disableScreenRumble ();
+
+	virtual bool wantLerp () { return _restartDue == 0; }
 
 public:
 	ClientMap (int x, int y, int width, int height, IFrontend *frontend, ServiceProvider& serviceProvider, int referenceTileWidth);
 	virtual ~ClientMap ();
 
-	virtual void render (int x, int y) const;
+	virtual void render () const;
+	virtual void renderParticles (int x, int y) const;
 	virtual void setSetting (const std::string& key, const std::string& value);
 
 	virtual bool secondFinger () { return false; }
 
 	virtual void resetCurrentMap ();
 	void close ();
+	void setZoom (const float zoom);
+	inline float getZoom () const { return _zoom; }
 	void disconnect ();
-	void init (uint16_t playerID);
+	virtual void init (uint16_t playerID);
 	bool load (const std::string& name, const std::string& title);
+
+	void setStartPositions(int startPositions);
 
 	void accelerate (Direction dir) const;
 	void resetAcceleration (Direction dir) const;
@@ -134,10 +151,12 @@ public:
 	int getWaterWidth () const override { return _mapWidth * _scale; }
 	int getPixelWidth () const override { return _mapWidth * _scale; }
 	int getPixelHeight () const override { return _mapHeight * _scale; }
+	int getRenderOffsetX() const override { return _x + _camera.getViewportX(); }
+	int getRenderOffsetY() const override { return _y + _camera.getViewportY(); }
 	TexturePtr loadTexture (const std::string& name) const override;
 
 	// IMap
-	void update (uint32_t deltaTime) override;
+	virtual void update (uint32_t deltaTime) override;
 	bool isActive () const override;
 	void restart (uint32_t delay) override;
 	int getMapWidth () const override;
@@ -244,4 +263,9 @@ inline const ClientMap::ClientEntityMap& ClientMap::getEntities () const
 inline bool ClientMap::isTutorial () const
 {
 	return _tutorial;
+}
+
+inline void ClientMap::setStartPositions (int startPositions)
+{
+	_startPositions = startPositions;
 }
